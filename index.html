@@ -1860,7 +1860,13 @@
                                         className: 'w-8 h-8 rounded-full bg-slate-100 text-slate-600 hover:bg-blue-100 hover:text-blue-600 transition flex items-center justify-center',
                                         title: 'ดูประวัติ',
                                         onclick: () => openUserHistoryModal(u)
-                                    }, el('i', { className: 'ph ph-clock-counter-clockwise' }))
+                                    }, el('i', { className: 'ph ph-clock-counter-clockwise' })),
+                                    u.id !== appState.session.user.id ? el('button', {
+                                        type: 'button',
+                                        className: 'w-8 h-8 rounded-full bg-red-50 text-red-400 hover:bg-red-100 hover:text-red-500 transition flex items-center justify-center',
+                                        title: 'ลบบัญชีลูกค้า',
+                                        onclick: () => deleteCustomer(u)
+                                    }, el('i', { className: 'ph ph-trash' })) : null
                                 )
                             ),
                             el('div', { className: 'bg-slate-50 p-2 rounded-lg text-xs text-slate-500 flex justify-between' },
@@ -1990,6 +1996,49 @@
                 ul.innerHTML = '';
                 ul.appendChild(el('li', { className: 'py-6 text-center text-xs text-red-400', textContent: 'โหลดประวัติไม่สำเร็จ' }));
             }
+        }
+
+        function deleteCustomer(user) {
+            if (!appState.isAdmin) return;
+            if (appState.session && user.id === appState.session.user.id) {
+                showToast('ไม่สามารถลบบัญชีแอดมินที่กำลังใช้งานอยู่ได้', 'error');
+                return;
+            }
+            openConfirmModal(`ยืนยันการลบบัญชี "${user.username}" รวมถึงแต้ม สลิป และประวัติทั้งหมด?`, async () => {
+                if (appState.isProcessing) return;
+                appState.isProcessing = true;
+                try {
+                    const { data, error } = await sbClient.from('profiles')
+                        .delete()
+                        .eq('id', user.id)
+                        .select();
+                    if (error) throw error;
+                    if (!data || data.length === 0) {
+                        throw new Error('ยังไม่ได้เปิดสิทธิ์ลบข้อมูลลูกค้าใน Supabase (กรุณารัน SQL เพิ่ม Policy)');
+                    }
+
+                    if (appState.cache.adminUsers) {
+                        appState.cache.adminUsers = appState.cache.adminUsers.filter(u => u.id !== user.id);
+                    }
+                    if (appState.cache.adminSlips) {
+                        appState.cache.adminSlips = appState.cache.adminSlips.filter(s => s.user_id !== user.id);
+                    }
+                    if (appState.cache.adminProfilesMap) {
+                        delete appState.cache.adminProfilesMap[user.id];
+                    }
+                    if (appState.selectedSlipUserId === user.id) {
+                        appState.selectedSlipUserId = null;
+                    }
+
+                    showToast(`ลบบัญชี ${user.username} เรียบร้อยแล้ว`, 'info');
+                    renderAdminCustomers();
+                } catch (err) {
+                    console.error('Delete customer error:', err);
+                    showToast(err.message || 'ลบบัญชีลูกค้าไม่สำเร็จ', 'error');
+                } finally {
+                    appState.isProcessing = false;
+                }
+            });
         }
 
         // --- Admin: Banks (Add / Edit / Delete) ---

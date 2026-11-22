@@ -1,0 +1,2304 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>สะสมแต้ม</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts: Prompt -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    
+    <!-- Supabase JS Client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Prompt', 'sans-serif'],
+                    },
+                    colors: {
+                        blue: {
+                            50: '#eff6ff',
+                            100: '#dbeafe',
+                            400: '#60a5fa',
+                            500: '#3b82f6',
+                            600: '#2563eb',
+                            900: '#1e3a8a',
+                        },
+                        cyan: {
+                            100: '#cffafe',
+                            500: '#06b6d4',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background: linear-gradient(180deg, #eff6ff 0%, #f8fafc 55%, #e0f2fe 100%);
+            min-height: 100vh;
+        }
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        .fade-in { animation: fadeIn 0.25s ease-in-out; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Cute Rubber Stamp Animation */
+        .stamp-pop { animation: stampPop 0.55s cubic-bezier(0.22, 1.4, 0.36, 1) forwards; }
+        @keyframes stampPop {
+            0% { opacity: 0; transform: scale(2.1) rotate(-25deg); }
+            55% { opacity: 1; transform: scale(0.88) rotate(6deg); }
+            80% { transform: scale(1.08) rotate(-8deg); }
+            100% { opacity: 1; transform: scale(1) rotate(-6deg); }
+        }
+
+        input:checked ~ .toggle-bg { background-color: #3b82f6; }
+        input:checked ~ .toggle-dot { transform: translateX(100%); }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        /* Cute Blinking Status Light Glow */
+        .led-glow-green { box-shadow: 0 0 8px rgba(52, 211, 153, 0.85); }
+        .led-glow-red { box-shadow: 0 0 8px rgba(248, 113, 113, 0.85); }
+        .led-glow-amber { box-shadow: 0 0 8px rgba(251, 191, 36, 0.85); }
+        .led-glow-blue { box-shadow: 0 0 8px rgba(59, 130, 246, 0.75); }
+    </style>
+</head>
+<body class="text-slate-800 antialiased font-sans">
+
+    <!-- Soft Falling Snow Canvas (Non-blocking background/overlay effect) -->
+    <canvas id="snow-canvas" class="fixed inset-0 w-full h-full pointer-events-none z-30"></canvas>
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 flex flex-col gap-2 w-[90%] max-w-sm pointer-events-none"></div>
+
+    <!-- App Container (Mobile First Design) -->
+    <div class="max-w-md mx-auto bg-white/95 backdrop-blur-[2px] flex flex-col shadow-xl relative min-h-screen w-full z-10">
+        
+        <!-- Header -->
+        <header class="bg-gradient-to-r from-blue-400 to-cyan-400 text-white p-5 rounded-b-3xl shadow-md relative z-10 flex-shrink-0">
+            <div class="flex justify-between items-center mb-3 gap-2">
+                <div class="flex items-center gap-2 min-w-0">
+                    <i class="ph-fill ph-star text-2xl text-yellow-300 flex-shrink-0"></i>
+                    <div class="min-w-0">
+                        <h1 class="text-xl font-bold truncate leading-tight">สะสมแต้ม</h1>
+                        <!-- Live System Status Indicator -->
+                        <div id="header-live-status" class="hidden flex items-center gap-1.5 mt-0.5">
+                            <span class="relative flex h-2 w-2 flex-shrink-0">
+                                <span id="header-status-ping" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-300 opacity-80"></span>
+                                <span id="header-status-dot" class="relative inline-flex rounded-full h-2 w-2 bg-emerald-300 led-glow-green"></span>
+                            </span>
+                            <span id="header-status-text" class="text-[10px] font-medium text-white/90 truncate">เปิดสะสมแต้ม</span>
+                        </div>
+                    </div>
+                </div>
+                <!-- Controls: Admin Mode Switcher (Admin Only), Role Badge & Logout -->
+                <div class="flex items-center gap-1.5 flex-shrink-0">
+                    <button id="btn-switch-view" onclick="toggleAdminViewMode()" class="hidden bg-white/25 hover:bg-white/35 px-2.5 py-1.5 rounded-full text-xs font-medium transition flex items-center gap-1 backdrop-blur-sm">
+                        <i class="ph ph-swap"></i> <span id="switch-view-label">ฝั่งลูกค้า</span>
+                    </button>
+                    <div id="role-badge" class="hidden bg-white/20 px-2.5 py-1.5 rounded-full text-xs font-medium flex items-center gap-1.5 backdrop-blur-sm">
+                        <span class="relative flex h-2 w-2">
+                            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-300 opacity-75"></span>
+                            <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-300"></span>
+                        </span>
+                        <span id="current-role-display">ลูกค้า</span>
+                    </div>
+                    <button id="btn-logout" onclick="logout()" class="hidden bg-red-500/80 hover:bg-red-500 px-2.5 py-1.5 rounded-full text-xs font-medium transition flex items-center gap-1 backdrop-blur-sm" title="ออกจากระบบ">
+                        <i class="ph ph-sign-out"></i> ออก
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Customer Point Summary -->
+            <div id="header-points-area" class="hidden bg-white/20 p-4 rounded-2xl backdrop-blur-sm border border-white/30 text-center mt-2">
+                <p class="text-sm font-medium mb-1">แต้มสะสมของคุณ <span id="display-username" class="font-bold text-yellow-200"></span></p>
+                <div class="flex justify-center items-end gap-1">
+                    <span id="display-user-points" class="text-4xl font-bold">0</span>
+                    <span class="text-lg pb-1">แต้ม</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- MAIN CONTENT AREA -->
+        <main id="main-content" class="flex-1 p-5 pb-24 overflow-y-auto relative z-0 flex flex-col">
+            
+            <!-- ============================================== -->
+            <!-- AUTHENTICATION / LOADING VIEW -->
+            <!-- ============================================== -->
+            <div id="auth-view" class="flex-1 flex flex-col justify-center items-center pb-8">
+                <div class="w-full bg-white p-6 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100">
+                    <div class="text-center mb-6">
+                        <div id="auth-icon-container" class="w-16 h-16 bg-blue-50 text-blue-500 rounded-full flex items-center justify-center mx-auto mb-3 transition-colors">
+                            <i id="auth-icon" class="ph-fill ph-spinner-gap animate-spin text-3xl"></i>
+                        </div>
+                        <h2 id="auth-title" class="text-xl font-bold text-blue-900">กำลังเชื่อมต่อระบบ...</h2>
+                        <p id="auth-subtitle" class="text-sm text-slate-500 mt-1">กรุณารอสักครู่</p>
+                    </div>
+
+                    <!-- Login / Register Form -->
+                    <form id="auth-form" onsubmit="handleAuth(event)" class="space-y-4 hidden fade-in">
+                        <div id="auth-input-group" class="space-y-4">
+                            <div>
+                                <label for="auth-email" class="block text-sm font-medium text-slate-700 mb-1">อีเมล (Email)</label>
+                                <input type="email" id="auth-email" placeholder="example@email.com" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-400 focus:bg-white transition">
+                            </div>
+                            <div id="auth-username-group" class="hidden">
+                                <label for="auth-display-name" class="block text-sm font-medium text-slate-700 mb-1">ชื่อที่แสดง (Display Name)</label>
+                                <input type="text" id="auth-display-name" placeholder="ชื่อเล่น หรือชื่อผู้ใช้" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-400 focus:bg-white transition">
+                            </div>
+                            <div>
+                                <label for="auth-password" class="block text-sm font-medium text-slate-700 mb-1">รหัสผ่าน (อย่างน้อย 6 ตัวอักษร)</label>
+                                <input type="password" id="auth-password" minlength="6" placeholder="••••••••" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-400 focus:bg-white transition">
+                            </div>
+                        </div>
+                        
+                        <button type="submit" id="auth-btn" class="w-full py-3 bg-blue-500 text-white rounded-xl font-bold hover:bg-blue-600 shadow-lg shadow-blue-500/30 transition mt-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                            เข้าสู่ระบบ
+                        </button>
+                    </form>
+
+                    <div id="auth-switch-block" class="mt-6 text-center text-sm hidden fade-in">
+                        <span id="auth-switch-text" class="text-slate-500">ยังไม่มีบัญชีใช่ไหม?</span>
+                        <button type="button" onclick="toggleAuthMode()" id="auth-switch-btn" class="text-blue-600 font-bold hover:underline ml-1 disabled:opacity-50">สมัครสมาชิก</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ============================================== -->
+            <!-- CUSTOMER VIEWS -->
+            <!-- ============================================== -->
+            <div id="customer-views" class="hidden flex-1">
+                
+                <!-- 1. Home / Upload Slip -->
+                <div id="view-cust-home" class="view-section space-y-4">
+
+                    <!-- Cute Loyalty Stamp Card -->
+                    <div id="stamp-card-section" class="bg-gradient-to-br from-blue-50 via-white to-cyan-50 rounded-3xl p-4 border-2 border-blue-100 shadow-sm relative overflow-hidden">
+                        <!-- Decorative subtle circles -->
+                        <div class="w-20 h-20 bg-blue-100/40 rounded-full absolute -top-8 -right-8 pointer-events-none"></div>
+                        <div class="w-14 h-14 bg-cyan-100/40 rounded-full absolute -bottom-6 -left-6 pointer-events-none"></div>
+
+                        <div class="relative z-10">
+                            <div class="flex justify-between items-center mb-3">
+                                <div class="flex items-center gap-2">
+                                    <div class="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center shadow-sm">
+                                        <i class="ph-fill ph-seal-check text-lg"></i>
+                                    </div>
+                                    <div>
+                                        <h3 class="text-sm font-bold text-blue-900 leading-tight">บัตรสะสมแต้ม</h3>
+                                        <p id="stamp-card-subtitle" class="text-[11px] text-slate-500">สะสมครบ 10 ดวง แลกของรางวัลได้เลย!</p>
+                                    </div>
+                                </div>
+                                <span id="stamp-card-badge" class="text-xs font-bold bg-blue-100 text-blue-600 px-2.5 py-1 rounded-full">0 / 10</span>
+                            </div>
+
+                            <!-- 10 Stamp Slots (5x2 Grid) -->
+                            <div id="stamp-grid" class="grid grid-cols-5 gap-2.5 bg-white/80 p-3 rounded-2xl border border-dashed border-blue-200">
+                                <!-- Stamps injected safely via JS -->
+                            </div>
+
+                            <div class="flex justify-between items-center mt-2.5 px-1">
+                                <span id="stamp-card-sheet" class="text-[11px] font-medium text-blue-600">บัตรใบที่ 1</span>
+                                <span id="stamp-card-hint" class="text-[11px] text-slate-400">1 สลิป = ปั๊ม 1 ดวง</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <h2 class="text-lg font-bold text-blue-900 flex items-center gap-2">
+                        <i class="ph ph-upload-simple text-blue-500 text-xl"></i> อัปโหลดสลิปสะสมแต้ม
+                    </h2>
+                    
+                    <div id="slip-system-status-msg" class="bg-red-50 text-red-600 p-4 rounded-xl text-sm border border-red-100 hidden flex items-center gap-2.5">
+                        <span class="relative flex h-2.5 w-2.5 flex-shrink-0">
+                            <span id="slip-status-ping" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                            <span id="slip-status-dot" class="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500 led-glow-red"></span>
+                        </span>
+                        <span id="slip-msg-text">ระบบสะสมแต้มปิดให้บริการชั่วคราว</span>
+                    </div>
+
+                    <!-- Store Bank Accounts Box -->
+                    <div class="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
+                        <p class="text-xs font-bold text-blue-900 mb-2 flex items-center gap-1.5">
+                            <i class="ph ph-bank text-blue-500 text-base"></i> บัญชีธนาคารสำหรับโอนเงิน
+                        </p>
+                        <div id="customer-bank-list" class="space-y-2 text-xs">
+                            <p class="text-slate-400">กำลังโหลดข้อมูลบัญชี...</p>
+                        </div>
+                    </div>
+
+                    <!-- Slip Upload Area -->
+                    <div id="slip-upload-area" class="bg-blue-50 border-2 border-dashed border-blue-200 rounded-2xl p-6 text-center transition-all hover:border-blue-400">
+                        <input type="file" id="slip-input" accept="image/*" class="hidden" onchange="handleImageSelect(event)">
+                        
+                        <div class="flex justify-center mb-3">
+                            <span class="inline-flex items-center gap-1.5 bg-white/90 text-emerald-600 text-[11px] font-medium px-3 py-1 rounded-full shadow-xs border border-emerald-100">
+                                <span class="relative flex h-2 w-2">
+                                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                    <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500 led-glow-green"></span>
+                                </span>
+                                พร้อมรับสลิปอัตโนมัติ
+                            </span>
+                        </div>
+
+                        <div id="upload-prompt" class="cursor-pointer" onclick="document.getElementById('slip-input').click()">
+                            <div class="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-3 shadow-sm text-blue-500">
+                                <i class="ph ph-image text-3xl"></i>
+                            </div>
+                            <p class="text-blue-900 font-medium">คลิกเพื่อเลือกรูปสลิป</p>
+                            <p class="text-sm text-slate-500 mt-1">1 สลิป = 1 แต้ม (บีบอัดอัตโนมัติ)</p>
+                        </div>
+
+                        <!-- Preview Area -->
+                        <div id="preview-area" class="hidden">
+                            <img id="slip-preview-img" src="" alt="Preview" class="max-h-52 mx-auto rounded-xl shadow-sm mb-3 object-contain bg-white">
+                            <p class="text-xs text-slate-500 mb-3" id="compress-info"></p>
+                            <div class="flex gap-2">
+                                <button type="button" id="btn-cancel-slip" onclick="resetUpload()" class="flex-1 py-2.5 px-4 rounded-xl border border-slate-200 bg-white text-slate-600 font-medium hover:bg-slate-100 transition disabled:opacity-50">
+                                    ยกเลิก
+                                </button>
+                                <button type="button" id="btn-submit-slip" onclick="submitSlip()" class="flex-1 py-2.5 px-4 rounded-xl bg-blue-500 text-white font-medium hover:bg-blue-600 shadow-md shadow-blue-500/30 transition disabled:opacity-50 disabled:cursor-wait">
+                                    ยืนยันอัปโหลด
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. Rewards -->
+                <div id="view-cust-rewards" class="view-section hidden">
+                    <h2 class="text-lg font-bold text-blue-900 mb-4 flex items-center gap-2">
+                        <i class="ph ph-gift text-blue-500 text-xl"></i> แลกของรางวัล
+                    </h2>
+                    <div id="rewards-grid" class="grid grid-cols-2 gap-4">
+                        <p class="col-span-2 text-center text-slate-400 text-sm py-8">กำลังโหลดของรางวัล...</p>
+                    </div>
+                </div>
+
+                <!-- 3. History -->
+                <div id="view-cust-history" class="view-section hidden">
+                    <h2 class="text-lg font-bold text-blue-900 mb-4 flex items-center gap-2">
+                        <i class="ph ph-clock-counter-clockwise text-blue-500 text-xl"></i> ประวัติการทำรายการ
+                    </h2>
+                    <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                        <ul id="history-list" class="divide-y divide-slate-50">
+                            <li class="p-8 text-center text-slate-400 text-sm">กำลังโหลดประวัติ...</li>
+                        </ul>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- ============================================== -->
+            <!-- ADMIN VIEWS (Protected by is_admin RPC) -->
+            <!-- ============================================== -->
+            <div id="admin-views" class="hidden flex-1">
+                
+                <!-- Admin Tabs -->
+                <div class="flex overflow-x-auto gap-2 pb-2 mb-4 hide-scrollbar border-b border-slate-100">
+                    <button type="button" onclick="switchAdminTab('settings')" id="tab-settings" class="admin-tab px-3.5 py-2 rounded-full text-xs font-medium whitespace-nowrap bg-blue-100 text-blue-700 transition">ตั้งค่า</button>
+                    <button type="button" onclick="switchAdminTab('slips')" id="tab-slips" class="admin-tab px-3.5 py-2 rounded-full text-xs font-medium whitespace-nowrap text-slate-500 hover:bg-slate-100 transition">ตรวจสลิป</button>
+                    <button type="button" onclick="switchAdminTab('customers')" id="tab-customers" class="admin-tab px-3.5 py-2 rounded-full text-xs font-medium whitespace-nowrap text-slate-500 hover:bg-slate-100 transition">ลูกค้า</button>
+                    <button type="button" onclick="switchAdminTab('banks')" id="tab-banks" class="admin-tab px-3.5 py-2 rounded-full text-xs font-medium whitespace-nowrap text-slate-500 hover:bg-slate-100 transition">บัญชี</button>
+                    <button type="button" onclick="switchAdminTab('rewards')" id="tab-rewards" class="admin-tab px-3.5 py-2 rounded-full text-xs font-medium whitespace-nowrap text-slate-500 hover:bg-slate-100 transition">ของรางวัล</button>
+                </div>
+
+                <!-- 1. Settings -->
+                <div id="admin-tab-settings" class="admin-section space-y-4">
+                    <div class="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="font-bold text-blue-900">การเปิด/ปิด ระบบ</h3>
+                            <span id="admin-system-status-pill" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-600">
+                                <span class="relative flex h-2 w-2">
+                                    <span id="admin-status-ping" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                    <span id="admin-status-dot" class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500 led-glow-green"></span>
+                                </span>
+                                <span id="admin-status-label">กำลังเปิดใช้งาน</span>
+                            </span>
+                        </div>
+                        <label class="flex items-center justify-between cursor-pointer">
+                            <span class="text-slate-700 font-medium text-sm">เปิดระบบสะสมแต้ม</span>
+                            <div class="relative">
+                                <input type="checkbox" id="setting-system-enabled" class="sr-only" onchange="updateSettings(this)">
+                                <div class="block bg-slate-200 w-12 h-7 rounded-full transition toggle-bg"></div>
+                                <div class="dot absolute left-1 top-1 bg-white w-5 h-5 rounded-full transition toggle-dot shadow-sm"></div>
+                            </div>
+                        </label>
+                    </div>
+
+                    <div class="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+                        <h3 class="font-bold text-blue-900 mb-4">วิธีสะสมแต้ม</h3>
+                        <div class="space-y-3">
+                            <label class="flex items-center gap-3 cursor-pointer p-3 border border-slate-100 rounded-xl hover:bg-blue-50 transition">
+                                <input type="radio" name="acc-mode" value="slip" onchange="updateSettings(this)" class="w-4 h-4 text-blue-600 focus:ring-blue-500">
+                                <div>
+                                    <p class="font-medium text-slate-700 text-sm">อัปโหลดสลิป</p>
+                                    <p class="text-xs text-slate-500">ลูกค้าอัปโหลดสลิปเพื่อรับแต้มอัตโนมัติ</p>
+                                </div>
+                            </label>
+                            <label class="flex items-center gap-3 cursor-pointer p-3 border border-slate-100 rounded-xl hover:bg-blue-50 transition">
+                                <input type="radio" name="acc-mode" value="manual" onchange="updateSettings(this)" class="w-4 h-4 text-blue-600 focus:ring-blue-500">
+                                <div>
+                                    <p class="font-medium text-slate-700 text-sm">แอดมินเพิ่มเอง</p>
+                                    <p class="text-xs text-slate-500">แอดมินเพิ่มแต้มให้ลูกค้าผ่านแท็บจัดการลูกค้า</p>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. Verify Slips -->
+                <div id="admin-tab-slips" class="admin-section hidden space-y-4">
+                    <div class="bg-blue-50/70 p-4 rounded-2xl border border-blue-100">
+                        <p class="text-xs font-bold text-blue-900 mb-1.5 flex items-center gap-1.5">
+                            <i class="ph ph-bank text-blue-500 text-base"></i> บัญชีร้านสำหรับตรวจสอบเทียบสลิป
+                        </p>
+                        <div id="admin-slips-bank-ref" class="space-y-1 text-xs text-slate-600">
+                            <p class="text-slate-400">กำลังโหลดบัญชี...</p>
+                        </div>
+                    </div>
+
+                    <!-- Overview: Grouped by Customer -->
+                    <div id="admin-slips-overview" class="space-y-3">
+                        <div class="flex justify-between items-center">
+                            <h3 class="font-bold text-blue-900 text-sm">รายชื่อลูกค้าที่อัปโหลดสลิป</h3>
+                            <span class="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-md" id="admin-slip-count">0 ใบ</span>
+                        </div>
+                        <div id="admin-slip-list" class="space-y-3 pb-4">
+                            <p class="text-center text-slate-400 text-sm py-4">กำลังโหลดรายการสลิป...</p>
+                        </div>
+                    </div>
+
+                    <!-- Detail: All Slips of Selected Customer -->
+                    <div id="admin-slips-detail" class="hidden space-y-3 fade-in">
+                        <div class="bg-white p-3.5 rounded-2xl border border-blue-100 shadow-sm flex items-center justify-between gap-2">
+                            <div class="flex items-center gap-2.5 min-w-0">
+                                <button type="button" onclick="backToSlipsOverview()" class="w-9 h-9 rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 transition flex items-center justify-center flex-shrink-0" title="กลับไปหน้ารวม">
+                                    <i class="ph ph-arrow-left text-lg"></i>
+                                </button>
+                                <div class="min-w-0">
+                                    <p id="detail-slip-username" class="font-bold text-blue-900 text-sm truncate">ชื่อลูกค้า</p>
+                                    <p class="text-[11px] text-slate-500">
+                                        ทั้งหมด <span id="detail-slip-count" class="font-bold text-blue-600">0</span> สลิป • แต้ม: <span id="detail-slip-points" class="font-bold text-cyan-600">0</span>
+                                    </p>
+                                </div>
+                            </div>
+                            <div id="detail-slip-point-actions" class="flex gap-1.5 flex-shrink-0">
+                                <!-- Quick -1 / +1 buttons injected via JS -->
+                            </div>
+                        </div>
+
+                        <div id="admin-slip-detail-grid" class="grid grid-cols-2 gap-3 pb-4">
+                            <!-- Customer slips injected safely via JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. Manage Customers -->
+                <div id="admin-tab-customers" class="admin-section hidden">
+                    <div class="flex justify-between items-center mb-3">
+                        <h3 class="font-bold text-blue-900 text-sm">รายชื่อลูกค้าทั้งหมด</h3>
+                        <span class="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-md" id="admin-user-count">0 คน</span>
+                    </div>
+                    <div id="admin-user-list" class="space-y-3 pb-4">
+                        <p class="text-center text-slate-400 text-sm py-4">กำลังโหลดข้อมูลลูกค้า...</p>
+                    </div>
+                </div>
+
+                <!-- 4. Manage Bank Accounts -->
+                <div id="admin-tab-banks" class="admin-section hidden">
+                    <form id="bank-form" onsubmit="saveBank(event)" class="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm mb-4 space-y-3">
+                        <div class="flex justify-between items-center">
+                            <h3 id="bank-form-title" class="font-bold text-blue-900 text-sm">เพิ่มบัญชีใหม่</h3>
+                            <button type="button" id="btn-cancel-edit-bank" onclick="resetBankForm()" class="hidden text-xs text-slate-500 hover:text-red-500">ยกเลิกแก้ไข</button>
+                        </div>
+                        <input type="hidden" id="bank-edit-id">
+                        <input type="text" id="bank-name" placeholder="ชื่อธนาคาร (เช่น กสิกรไทย)" required class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-400 focus:bg-white transition text-sm">
+                        <input type="text" id="bank-acc-name" placeholder="ชื่อบัญชี" required class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-400 focus:bg-white transition text-sm">
+                        <input type="text" id="bank-acc-number" placeholder="เลขบัญชี" required class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-400 focus:bg-white transition text-sm">
+                        <button type="submit" id="btn-add-bank" class="w-full py-2.5 bg-blue-500 text-white rounded-xl font-medium hover:bg-blue-600 shadow-md shadow-blue-500/30 transition text-sm disabled:opacity-50">
+                            <i class="ph ph-plus mr-1"></i> เพิ่มบัญชี
+                        </button>
+                    </form>
+                    <div id="admin-bank-list" class="space-y-3 pb-4"></div>
+                </div>
+
+                <!-- 5. Manage Rewards -->
+                <div id="admin-tab-rewards" class="admin-section hidden">
+                    <form id="reward-form" onsubmit="saveReward(event)" class="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm mb-4 space-y-3">
+                        <div class="flex justify-between items-center">
+                            <h3 id="reward-form-title" class="font-bold text-blue-900 text-sm">เพิ่มของรางวัลใหม่</h3>
+                            <button type="button" id="btn-cancel-edit-reward" onclick="resetRewardForm()" class="hidden text-xs text-slate-500 hover:text-red-500">ยกเลิกแก้ไข</button>
+                        </div>
+                        <input type="hidden" id="reward-edit-id">
+                        <input type="text" id="reward-name" placeholder="ชื่อของรางวัล" required class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-400 focus:bg-white transition text-sm">
+                        <div class="flex gap-3">
+                            <input type="number" id="reward-points" placeholder="แต้มที่ใช้" required min="1" class="w-1/2 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-400 focus:bg-white transition text-sm">
+                            <input type="number" id="reward-stock" placeholder="จำนวน (ชิ้น)" required min="0" class="w-1/2 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-400 focus:bg-white transition text-sm">
+                        </div>
+                        <button type="submit" id="btn-add-reward" class="w-full py-2.5 bg-cyan-500 text-white rounded-xl font-medium hover:bg-cyan-600 shadow-md shadow-cyan-500/30 transition text-sm disabled:opacity-50">
+                            <i class="ph ph-plus mr-1"></i> เพิ่มของรางวัล
+                        </button>
+                    </form>
+                    <div id="admin-reward-list" class="space-y-3 pb-4"></div>
+                </div>
+
+            </div>
+        </main>
+
+        <!-- Customer Bottom Navigation -->
+        <nav id="customer-nav" class="hidden bg-white border-t border-slate-100 px-6 py-3 flex justify-between items-center fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md z-20 shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.1)]">
+            <button type="button" onclick="switchCustomerTab('home')" class="nav-btn flex flex-col items-center gap-1 text-blue-500 w-16" data-target="home">
+                <i class="ph-fill ph-house text-2xl transition-transform"></i>
+                <span class="text-[10px] font-medium">หน้าหลัก</span>
+            </button>
+            <button type="button" onclick="switchCustomerTab('rewards')" class="nav-btn flex flex-col items-center gap-1 text-slate-400 hover:text-blue-400 transition w-16" data-target="rewards">
+                <i class="ph ph-gift text-2xl transition-transform"></i>
+                <span class="text-[10px] font-medium">ของรางวัล</span>
+            </button>
+            <button type="button" onclick="switchCustomerTab('history')" class="nav-btn flex flex-col items-center gap-1 text-slate-400 hover:text-blue-400 transition w-16" data-target="history">
+                <i class="ph ph-clock-counter-clockwise text-2xl transition-transform"></i>
+                <span class="text-[10px] font-medium">ประวัติ</span>
+            </button>
+        </nav>
+
+    </div>
+
+    <!-- ============================================== -->
+    <!-- MODALS (Safe Replacements for alert/confirm) -->
+    <!-- ============================================== -->
+
+    <!-- 1. Slip Full Image Modal -->
+    <div id="slip-modal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4" onclick="closeModal('slip-modal')">
+        <div class="bg-white rounded-3xl max-w-sm w-full p-5 shadow-2xl space-y-3" onclick="event.stopPropagation()">
+            <div class="flex justify-between items-center">
+                <div>
+                    <h3 id="slip-modal-user" class="font-bold text-blue-900 text-sm">สลิปจากลูกค้า</h3>
+                    <p id="slip-modal-date" class="text-[11px] text-slate-400"></p>
+                </div>
+                <button type="button" onclick="closeModal('slip-modal')" class="w-8 h-8 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 flex items-center justify-center">
+                    <i class="ph ph-x"></i>
+                </button>
+            </div>
+            <img id="slip-modal-img" src="" alt="Slip" class="w-full max-h-[65vh] object-contain rounded-2xl bg-slate-50 border border-slate-100">
+        </div>
+    </div>
+
+    <!-- 2. Edit Customer Modal -->
+    <div id="edit-user-modal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4" onclick="closeModal('edit-user-modal')">
+        <div class="bg-white rounded-3xl max-w-sm w-full p-5 shadow-2xl" onclick="event.stopPropagation()">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="font-bold text-blue-900">แก้ไขข้อมูลลูกค้า</h3>
+                <button type="button" onclick="closeModal('edit-user-modal')" class="w-8 h-8 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 flex items-center justify-center">
+                    <i class="ph ph-x"></i>
+                </button>
+            </div>
+            <form onsubmit="saveUserEdit(event)" class="space-y-3">
+                <input type="hidden" id="edit-user-id">
+                <div>
+                    <label for="edit-user-name" class="block text-xs font-medium text-slate-600 mb-1">ชื่อผู้ใช้</label>
+                    <input type="text" id="edit-user-name" required class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-400 text-sm">
+                </div>
+                <div>
+                    <label for="edit-user-points" class="block text-xs font-medium text-slate-600 mb-1">แต้มสะสม</label>
+                    <input type="number" id="edit-user-points" required min="0" class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-400 text-sm">
+                </div>
+                <div class="flex gap-2 pt-2">
+                    <button type="button" onclick="closeModal('edit-user-modal')" class="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium">ยกเลิก</button>
+                    <button type="submit" id="btn-save-user-edit" class="flex-1 py-2.5 rounded-xl bg-blue-500 text-white text-sm font-medium hover:bg-blue-600 disabled:opacity-50">บันทึก</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 3. Customer History Modal (Admin View) -->
+    <div id="user-history-modal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4" onclick="closeModal('user-history-modal')">
+        <div class="bg-white rounded-3xl max-w-sm w-full p-5 shadow-2xl flex flex-col max-h-[80vh]" onclick="event.stopPropagation()">
+            <div class="flex justify-between items-center mb-3">
+                <h3 id="user-history-title" class="font-bold text-blue-900 text-sm">ประวัติลูกค้า</h3>
+                <button type="button" onclick="closeModal('user-history-modal')" class="w-8 h-8 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 flex items-center justify-center">
+                    <i class="ph ph-x"></i>
+                </button>
+            </div>
+            <ul id="admin-user-history-list" class="overflow-y-auto divide-y divide-slate-100 flex-1"></ul>
+        </div>
+    </div>
+
+    <!-- 4. Generic Confirm Modal -->
+    <div id="confirm-modal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4" onclick="closeModal('confirm-modal')">
+        <div class="bg-white rounded-3xl max-w-xs w-full p-5 shadow-2xl text-center space-y-4" onclick="event.stopPropagation()">
+            <div class="w-12 h-12 rounded-full bg-red-50 text-red-500 flex items-center justify-center mx-auto">
+                <i class="ph ph-trash text-2xl"></i>
+            </div>
+            <div>
+                <h3 class="font-bold text-slate-800">ยืนยันการลบ</h3>
+                <p id="confirm-modal-msg" class="text-xs text-slate-500 mt-1">คุณต้องการลบรายการนี้ใช่หรือไม่?</p>
+            </div>
+            <div class="flex gap-2">
+                <button type="button" onclick="closeModal('confirm-modal')" class="flex-1 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium">ยกเลิก</button>
+                <button type="button" id="btn-confirm-ok" class="flex-1 py-2 rounded-xl bg-red-500 text-white text-sm font-medium hover:bg-red-600">ลบข้อมูล</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // 1. SUPABASE INITIALIZATION & STATE
+        // ==========================================
+        const supabaseUrl = 'https://lhsngxrstkxebxylyckk.supabase.co';
+        const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxoc25neHJzdGt4ZWJ4eWx5Y2trIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ4ODgyNTEsImV4cCI6MjExMDQ2NDI1MX0.rNlFC47rsVSUYDeVTcr926Et0zY72pN9hgd0uWimqoM';
+        let sbClient = null;
+
+        const appState = {
+            session: null,
+            lastLoadedUserId: null,
+            isAdmin: false,
+            adminViewMode: 'admin', // 'admin' หรือ 'customer' (เฉพาะแอดมินสลับได้)
+            selectedSlipUserId: null, // เก็บ user_id ที่แอดมินกำลังกดเข้าไปตรวจสลิป
+            profile: null,
+            settings: { system_enabled: true, acc_mode: 'slip' },
+            storageUnavailable: false,
+            isProcessing: false,
+            cache: {
+                banks: null,
+                rewards: null,
+                history: null,
+                adminSlips: null,
+                adminProfilesMap: {},
+                adminUsers: null
+            }
+        };
+
+        // หน่วยความจำสำรอง ป้องกันกรณีเบราว์เซอร์ในแอป (LINE/FB/Iframe) บล็อก localStorage
+        const safeStorage = (() => {
+            try {
+                const testKey = '__pj_test__';
+                window.localStorage.setItem(testKey, '1');
+                window.localStorage.removeItem(testKey);
+                return window.localStorage;
+            } catch (e) {
+                const mem = {};
+                return {
+                    getItem: (k) => (k in mem ? mem[k] : null),
+                    setItem: (k, v) => { mem[k] = String(v); },
+                    removeItem: (k) => { delete mem[k]; }
+                };
+            }
+        })();
+
+        function triggerEmergencyError(msg) {
+            const icon = document.getElementById('auth-icon');
+            const iconContainer = document.getElementById('auth-icon-container');
+            const title = document.getElementById('auth-title');
+            const subtitle = document.getElementById('auth-subtitle');
+            const authForm = document.getElementById('auth-form');
+            const inputGroup = document.getElementById('auth-input-group');
+            const btn = document.getElementById('auth-btn');
+            const authView = document.getElementById('auth-view');
+
+            if (icon) icon.className = 'ph-fill ph-warning-circle text-3xl';
+            if (iconContainer) {
+                iconContainer.classList.remove('text-blue-500', 'text-blue-600', 'bg-blue-50');
+                iconContainer.classList.add('text-red-500', 'bg-red-50');
+            }
+            if (title) title.textContent = 'เชื่อมต่อไม่สำเร็จ';
+            if (subtitle) subtitle.textContent = msg || 'กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่';
+            if (inputGroup) inputGroup.classList.add('hidden');
+            if (btn && authForm) {
+                btn.textContent = 'ลองเชื่อมต่อใหม่';
+                btn.disabled = false;
+                btn.onclick = (e) => { e.preventDefault(); window.location.reload(); };
+                authForm.classList.remove('hidden');
+            }
+            if (authView) authView.classList.remove('hidden');
+        }
+
+        async function initializeApp() {
+            try {
+                if (typeof window.supabase === 'undefined') {
+                    throw new Error('ไม่สามารถโหลดไฟล์เชื่อมต่อฐานข้อมูลได้');
+                }
+
+                sbClient = window.supabase.createClient(supabaseUrl, supabaseAnonKey, {
+                    auth: { storage: safeStorage, persistSession: true, autoRefreshToken: true }
+                });
+
+                const sessionPromise = sbClient.auth.getSession();
+                const timeoutPromise = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('การเชื่อมต่อใช้เวลานานเกินไป')), 8000)
+                );
+
+                const { data, error } = await Promise.race([sessionPromise, timeoutPromise]);
+                if (error) throw error;
+
+                await handleSessionUpdate(data ? data.session : null);
+
+                sbClient.auth.onAuthStateChange((event, s) => {
+                    if (event === 'SIGNED_IN') {
+                        if (s && s.user && s.user.id === appState.lastLoadedUserId) return;
+                        handleSessionUpdate(s);
+                    } else if (event === 'SIGNED_OUT') {
+                        appState.lastLoadedUserId = null;
+                        appState.cache = { banks: null, rewards: null, history: null, adminSlips: null, adminUsers: null };
+                        handleSessionUpdate(null);
+                    }
+                });
+            } catch (err) {
+                console.error('Init Error:', err);
+                triggerEmergencyError(err.message || String(err));
+            }
+        }
+
+        // รอไลบรารี Supabase โหลดให้พร้อมก่อนเริ่มทำงาน
+        let checkCount = 0;
+        function checkAndStart() {
+            if (typeof window.supabase !== 'undefined') {
+                initializeApp();
+            } else if (checkCount < 25) {
+                checkCount++;
+                setTimeout(checkAndStart, 200);
+            } else {
+                triggerEmergencyError('เบราว์เซอร์ของคุณบล็อกไฟล์ระบบ กรุณาลองเปิดใน Chrome หรือ Safari');
+            }
+        }
+
+        if (document.readyState === 'complete' || document.readyState === 'interactive') {
+            checkAndStart();
+        } else {
+            window.addEventListener('DOMContentLoaded', checkAndStart);
+        }
+
+        // ==========================================
+        // 2. SAFE DOM & UI HELPERS
+        // ==========================================
+        function el(tag, attrs, ...children) {
+            const node = document.createElement(tag);
+            if (attrs) {
+                for (const k in attrs) {
+                    if (k === 'className') node.className = attrs[k];
+                    else if (k === 'textContent') node.textContent = attrs[k];
+                    else if (k === 'onclick') node.onclick = attrs[k];
+                    else if (k === 'disabled') node.disabled = attrs[k];
+                    else if (k === 'title') node.title = attrs[k];
+                    else if (k === 'src') node.src = attrs[k];
+                    else if (k === 'type') node.type = attrs[k];
+                    else if (k === 'loading') node.loading = attrs[k];
+                    else node.setAttribute(k, attrs[k]);
+                }
+            }
+            for (const child of children) {
+                if (child == null) continue;
+                if (typeof child === 'string' || typeof child === 'number') {
+                    node.appendChild(document.createTextNode(String(child)));
+                } else if (child instanceof Node) {
+                    node.appendChild(child);
+                }
+            }
+            return node;
+        }
+
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const bgColor = type === 'success' ? 'bg-emerald-500' : (type === 'error' ? 'bg-red-500' : 'bg-blue-500');
+            const icon = type === 'success' ? 'ph-check-circle' : (type === 'error' ? 'ph-x-circle' : 'ph-info');
+
+            const toast = el('div', {
+                className: `${bgColor} text-white px-4 py-3 rounded-xl shadow-lg flex items-center gap-3 transform transition-all duration-300 translate-y-[-20px] opacity-0`
+            },
+                el('i', { className: `ph ${icon} text-xl flex-shrink-0` }),
+                el('span', { className: 'text-sm font-medium', textContent: message })
+            );
+
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.classList.remove('translate-y-[-20px]', 'opacity-0');
+                toast.classList.add('translate-y-0', 'opacity-100');
+            }, 10);
+
+            setTimeout(() => {
+                toast.classList.remove('translate-y-0', 'opacity-100');
+                toast.classList.add('translate-y-[-20px]', 'opacity-0');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        function formatDate(dateString) {
+            const d = new Date(dateString);
+            if (isNaN(d.getTime())) return '';
+            const pad = (n) => String(n).padStart(2, '0');
+            return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        }
+
+        function closeModal(id) {
+            const modal = document.getElementById(id);
+            if (modal) modal.classList.add('hidden');
+        }
+
+        function openConfirmModal(msg, onConfirm) {
+            document.getElementById('confirm-modal-msg').textContent = msg;
+            const okBtn = document.getElementById('btn-confirm-ok');
+            okBtn.onclick = async () => {
+                closeModal('confirm-modal');
+                await onConfirm();
+            };
+            document.getElementById('confirm-modal').classList.remove('hidden');
+        }
+
+        // ==========================================
+        // 3. AUTHENTICATION
+        // ==========================================
+        async function handleSessionUpdate(session) {
+            appState.session = session;
+            if (!session) {
+                appState.lastLoadedUserId = null;
+                appState.isAdmin = false;
+                appState.profile = null;
+                initUI();
+                return;
+            }
+
+            try {
+                appState.lastLoadedUserId = session.user.id;
+                // ดึงข้อมูลหลักพร้อมกันในรอบเดียวเพื่อความเร็วสูงสุด
+                const [adminRes, profileRes, settingsRes, banksRes] = await Promise.all([
+                    sbClient.rpc('is_admin'),
+                    sbClient.from('profiles').select('*').eq('id', session.user.id).single(),
+                    sbClient.from('settings').select('*').eq('id', 1).single(),
+                    sbClient.from('banks').select('*').order('created_at', { ascending: false })
+                ]);
+
+                appState.isAdmin = !!adminRes.data;
+                appState.adminViewMode = appState.isAdmin ? 'admin' : 'customer';
+                appState.profile = profileRes.data || { id: session.user.id, points: 0, username: session.user.email.split('@')[0] };
+                appState.settings = settingsRes.data || { system_enabled: true, acc_mode: 'slip' };
+                if (banksRes.data) appState.cache.banks = banksRes.data;
+
+                initUI();
+            } catch (e) {
+                console.error('Session load error:', e);
+                appState.lastLoadedUserId = null;
+                appState.session = null;
+                appState.isAdmin = false;
+                appState.profile = null;
+                initUI();
+                showToast('ดึงข้อมูลไม่สำเร็จ กรุณาเข้าสู่ระบบใหม่', 'error');
+            }
+        }
+
+        let authMode = 'login';
+
+        function toggleAuthMode() {
+            authMode = authMode === 'login' ? 'register' : 'login';
+            document.getElementById('auth-title').textContent = authMode === 'login' ? 'เข้าสู่ระบบ' : 'สมัครสมาชิกใหม่';
+            document.getElementById('auth-subtitle').textContent = authMode === 'login' ? 'เพื่อสะสมแต้มและแลกของรางวัล' : 'กรอกข้อมูลเพื่อเปิดบัญชีสะสมแต้ม';
+            document.getElementById('auth-btn').textContent = authMode === 'login' ? 'เข้าสู่ระบบ' : 'สมัครสมาชิก';
+            document.getElementById('auth-switch-text').textContent = authMode === 'login' ? 'ยังไม่มีบัญชีใช่ไหม?' : 'มีบัญชีอยู่แล้วใช่ไหม?';
+            document.getElementById('auth-switch-btn').textContent = authMode === 'login' ? 'สมัครสมาชิก' : 'เข้าสู่ระบบ';
+
+            const nameGroup = document.getElementById('auth-username-group');
+            const nameInput = document.getElementById('auth-display-name');
+            if (authMode === 'register') {
+                nameGroup.classList.remove('hidden');
+                nameInput.required = true;
+            } else {
+                nameGroup.classList.add('hidden');
+                nameInput.required = false;
+            }
+            document.getElementById('auth-form').reset();
+        }
+
+        async function handleAuth(e) {
+            e.preventDefault();
+            if (appState.isProcessing) return;
+
+            const email = document.getElementById('auth-email').value.trim();
+            const password = document.getElementById('auth-password').value.trim();
+            const displayName = document.getElementById('auth-display-name').value.trim();
+            const btn = document.getElementById('auth-btn');
+
+            if (!email || !password) {
+                showToast('กรุณากรอกอีเมลและรหัสผ่าน', 'error');
+                return;
+            }
+
+            appState.isProcessing = true;
+            btn.disabled = true;
+            btn.textContent = 'กำลังดำเนินการ...';
+
+            try {
+                if (authMode === 'register') {
+                    const { data, error } = await sbClient.auth.signUp({
+                        email,
+                        password,
+                        options: { data: { username: displayName || email.split('@')[0] } }
+                    });
+                    if (error) throw error;
+                    if (!data.session) {
+                        showToast('สมัครสมาชิกสำเร็จ! กรุณายืนยันอีเมลหรือเข้าสู่ระบบ', 'success');
+                        toggleAuthMode();
+                    } else {
+                        showToast('สมัครสมาชิกสำเร็จ!', 'success');
+                    }
+                } else {
+                    const { error } = await sbClient.auth.signInWithPassword({ email, password });
+                    if (error) throw error;
+                    showToast('เข้าสู่ระบบสำเร็จ', 'success');
+                }
+                document.getElementById('auth-form').reset();
+            } catch (error) {
+                showToast(error.message || 'อีเมลหรือรหัสผ่านไม่ถูกต้อง', 'error');
+            } finally {
+                appState.isProcessing = false;
+                btn.disabled = false;
+                btn.textContent = authMode === 'login' ? 'เข้าสู่ระบบ' : 'สมัครสมาชิก';
+            }
+        }
+
+        async function logout() {
+            await sbClient.auth.signOut();
+            showToast('ออกจากระบบแล้ว', 'info');
+        }
+
+        // ==========================================
+        // 4. UI ROUTING & VIEW SWITCHING
+        // ==========================================
+        function toggleAdminViewMode() {
+            // ตรวจสอบสิทธิ์แอดมินก่อนสลับหน้าเสมอ
+            if (!appState.isAdmin) {
+                showToast('เฉพาะแอดมินเท่านั้นที่เข้าถึงได้', 'error');
+                return;
+            }
+            appState.adminViewMode = appState.adminViewMode === 'admin' ? 'customer' : 'admin';
+            initUI();
+        }
+
+        function initUI() {
+            const authView = document.getElementById('auth-view');
+            const custViews = document.getElementById('customer-views');
+            const adminViews = document.getElementById('admin-views');
+            const custNav = document.getElementById('customer-nav');
+            const headerPoints = document.getElementById('header-points-area');
+            const btnLogout = document.getElementById('btn-logout');
+            const btnSwitch = document.getElementById('btn-switch-view');
+            const switchLabel = document.getElementById('switch-view-label');
+            const roleBadge = document.getElementById('role-badge');
+            const roleDisplay = document.getElementById('current-role-display');
+            const headerLiveStatus = document.getElementById('header-live-status');
+
+            authView.classList.add('hidden');
+            custViews.classList.add('hidden');
+            adminViews.classList.add('hidden');
+            custNav.classList.add('hidden');
+            headerPoints.classList.add('hidden');
+            btnLogout.classList.add('hidden');
+            btnSwitch.classList.add('hidden');
+            roleBadge.classList.add('hidden');
+            if (headerLiveStatus) headerLiveStatus.classList.add('hidden');
+
+            if (!appState.session) {
+                const icon = document.getElementById('auth-icon');
+                const iconContainer = document.getElementById('auth-icon-container');
+                if (icon) icon.className = 'ph-fill ph-user text-3xl';
+                if (iconContainer) {
+                    iconContainer.classList.remove('text-red-500', 'bg-red-50');
+                    iconContainer.classList.add('text-blue-600', 'bg-blue-50');
+                }
+                document.getElementById('auth-title').textContent = authMode === 'login' ? 'เข้าสู่ระบบ' : 'สมัครสมาชิกใหม่';
+                document.getElementById('auth-subtitle').textContent = authMode === 'login' ? 'เพื่อสะสมแต้มและแลกของรางวัล' : 'กรอกข้อมูลเพื่อเปิดบัญชีสะสมแต้ม';
+                document.getElementById('auth-input-group').classList.remove('hidden');
+                document.getElementById('auth-form').classList.remove('hidden');
+                document.getElementById('auth-switch-block').classList.remove('hidden');
+                document.getElementById('auth-email').required = true;
+                document.getElementById('auth-password').required = true;
+
+                const btn = document.getElementById('auth-btn');
+                btn.textContent = authMode === 'login' ? 'เข้าสู่ระบบ' : 'สมัครสมาชิก';
+                btn.onclick = null;
+                btn.disabled = false;
+
+                authView.classList.remove('hidden');
+                return;
+            }
+
+            btnLogout.classList.remove('hidden');
+            roleBadge.classList.remove('hidden');
+            if (headerLiveStatus) headerLiveStatus.classList.remove('hidden');
+            updateLiveStatusIndicators();
+
+            // ปุ่มสลับโหมดแสดงเฉพาะแอดมินที่ผ่านการตรวจ is_admin() แล้วเท่านั้น
+            if (appState.isAdmin) {
+                btnSwitch.classList.remove('hidden');
+            }
+
+            if (appState.isAdmin && appState.adminViewMode === 'admin') {
+                roleDisplay.textContent = 'แอดมิน';
+                switchLabel.textContent = 'ฝั่งลูกค้า';
+                adminViews.classList.remove('hidden');
+                renderAdminSettingsUI();
+                switchAdminTab('settings');
+            } else {
+                roleDisplay.textContent = appState.isAdmin ? 'แอดมิน' : 'ลูกค้า';
+                switchLabel.textContent = 'หน้าแอดมิน';
+                custViews.classList.remove('hidden');
+                custNav.classList.remove('hidden');
+                headerPoints.classList.remove('hidden');
+
+                const uname = (appState.profile && appState.profile.username) ? appState.profile.username : '';
+                const pts = (appState.profile && appState.profile.points) ? appState.profile.points : 0;
+                document.getElementById('display-username').textContent = `(${uname})`;
+                document.getElementById('display-user-points').textContent = pts;
+
+                renderCustomerUI();
+                switchCustomerTab('home');
+            }
+        }
+
+        // ==========================================
+        // 5. CUSTOMER VIEWS & RENDERING
+        // ==========================================
+        function switchCustomerTab(tab) {
+            document.querySelectorAll('#customer-views .view-section').forEach(s => s.classList.add('hidden'));
+            const active = document.getElementById(`view-cust-${tab}`);
+            if (active) {
+                active.classList.remove('hidden');
+                active.classList.add('fade-in');
+            }
+
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                const icon = btn.querySelector('i');
+                if (btn.dataset.target === tab) {
+                    btn.classList.add('text-blue-500');
+                    btn.classList.remove('text-slate-400');
+                    icon.classList.remove('ph');
+                    icon.classList.add('ph-fill', 'scale-110');
+                } else {
+                    btn.classList.remove('text-blue-500');
+                    btn.classList.add('text-slate-400');
+                    icon.classList.remove('ph-fill', 'scale-110');
+                    icon.classList.add('ph');
+                }
+            });
+
+            if (tab === 'home') fetchCustomerBanks();
+            if (tab === 'rewards') fetchAndRenderRewards();
+            if (tab === 'history') fetchAndRenderHistory();
+        }
+
+        function renderCustomerUI() {
+            const uploadArea = document.getElementById('slip-upload-area');
+            const statusMsg = document.getElementById('slip-system-status-msg');
+            const statusText = document.getElementById('slip-msg-text');
+
+            renderStampCard(false);
+            updateLiveStatusIndicators();
+
+            if (!appState.settings.system_enabled || appState.settings.acc_mode === 'manual') {
+                uploadArea.classList.add('hidden');
+                statusMsg.classList.remove('hidden');
+                statusText.textContent = !appState.settings.system_enabled
+                    ? 'ระบบสะสมแต้มปิดให้บริการชั่วคราว'
+                    : 'กรุณาติดต่อแอดมินเพื่อเพิ่มแต้มสะสม';
+            } else {
+                uploadArea.classList.remove('hidden');
+                statusMsg.classList.add('hidden');
+            }
+        }
+
+        // อัปเดตไฟกระพริบแสดงสถานะระบบทุกจุด (Header, หน้าอัปโหลดสลิป, หน้าตั้งค่าแอดมิน)
+        function updateLiveStatusIndicators() {
+            const isEnabled = !!(appState.settings && appState.settings.system_enabled);
+            const isManual = appState.settings && appState.settings.acc_mode === 'manual';
+
+            // 1. Header Live Indicator
+            const hPing = document.getElementById('header-status-ping');
+            const hDot = document.getElementById('header-status-dot');
+            const hText = document.getElementById('header-status-text');
+            if (hPing && hDot && hText) {
+                if (!isEnabled) {
+                    hPing.className = 'animate-ping absolute inline-flex h-full w-full rounded-full bg-red-300 opacity-80';
+                    hDot.className = 'relative inline-flex rounded-full h-2 w-2 bg-red-400 led-glow-red';
+                    hText.textContent = 'ปิดระบบชั่วคราว';
+                } else if (isManual) {
+                    hPing.className = 'animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-200 opacity-80';
+                    hDot.className = 'relative inline-flex rounded-full h-2 w-2 bg-amber-300 led-glow-amber';
+                    hText.textContent = 'โหมดแอดมินเพิ่มแต้ม';
+                } else {
+                    hPing.className = 'animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-300 opacity-80';
+                    hDot.className = 'relative inline-flex rounded-full h-2 w-2 bg-emerald-300 led-glow-green';
+                    hText.textContent = 'เปิดสะสมแต้ม';
+                }
+            }
+
+            // 2. Customer Slip Status Dot
+            const sPing = document.getElementById('slip-status-ping');
+            const sDot = document.getElementById('slip-status-dot');
+            const sBox = document.getElementById('slip-system-status-msg');
+            if (sPing && sDot && sBox) {
+                if (!isEnabled) {
+                    sBox.className = 'bg-red-50 text-red-600 p-4 rounded-xl text-sm border border-red-100 flex items-center gap-2.5' + (sBox.classList.contains('hidden') ? ' hidden' : '');
+                    sPing.className = 'animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75';
+                    sDot.className = 'relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500 led-glow-red';
+                } else if (isManual) {
+                    sBox.className = 'bg-amber-50 text-amber-700 p-4 rounded-xl text-sm border border-amber-100 flex items-center gap-2.5' + (sBox.classList.contains('hidden') ? ' hidden' : '');
+                    sPing.className = 'animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75';
+                    sDot.className = 'relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500 led-glow-amber';
+                }
+            }
+
+            // 3. Admin Settings Status Pill
+            const aPill = document.getElementById('admin-system-status-pill');
+            const aPing = document.getElementById('admin-status-ping');
+            const aDot = document.getElementById('admin-status-dot');
+            const aLabel = document.getElementById('admin-status-label');
+            if (aPill && aPing && aDot && aLabel) {
+                if (isEnabled) {
+                    aPill.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-600';
+                    aPing.className = 'animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75';
+                    aDot.className = 'relative inline-flex rounded-full h-2 w-2 bg-emerald-500 led-glow-green';
+                    aLabel.textContent = isManual ? 'เปิดอยู่ (แอดมินเพิ่มเอง)' : 'เปิดใช้งานอยู่';
+                } else {
+                    aPill.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-red-50 text-red-600';
+                    aPing.className = 'animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75';
+                    aDot.className = 'relative inline-flex rounded-full h-2 w-2 bg-red-500 led-glow-red';
+                    aLabel.textContent = 'ปิดชั่วคราว';
+                }
+            }
+        }
+
+        // สร้างและอัปเดตบัตรสะสมแต้มแบบปั๊มสแตมป์ (10 ดวงต่อใบ)
+        function renderStampCard(animateNewest = false) {
+            const grid = document.getElementById('stamp-grid');
+            const badge = document.getElementById('stamp-card-badge');
+            const sheetEl = document.getElementById('stamp-card-sheet');
+            const subtitleEl = document.getElementById('stamp-card-subtitle');
+            if (!grid) return;
+
+            const totalPoints = (appState.profile && typeof appState.profile.points === 'number') ? appState.profile.points : 0;
+            const stampedCount = totalPoints === 0 ? 0 : (totalPoints % 10 === 0 ? 10 : totalPoints % 10);
+            const cardNumber = totalPoints === 0 ? 1 : Math.ceil(totalPoints / 10);
+
+            if (badge) badge.textContent = `${stampedCount} / 10`;
+            if (sheetEl) sheetEl.textContent = `บัตรใบที่ ${cardNumber}`;
+            if (subtitleEl) {
+                if (stampedCount === 10) {
+                    subtitleEl.textContent = 'เย้! ปั๊มครบ 10 ดวงแล้ว นำไปแลกของรางวัลได้เลย';
+                } else {
+                    subtitleEl.textContent = `อีก ${10 - stampedCount} ดวง จะปั๊มเต็มบัตรใบนี้!`;
+                }
+            }
+
+            grid.innerHTML = '';
+            for (let i = 1; i <= 10; i++) {
+                const isStamped = i <= stampedCount;
+                const isNewest = animateNewest && i === stampedCount;
+
+                if (isStamped) {
+                    const stampOuter = el('div', {
+                        className: `aspect-square rounded-full bg-gradient-to-br from-blue-400 to-cyan-400 p-1 shadow-sm flex items-center justify-center ${isNewest ? 'stamp-pop ring-4 ring-blue-200' : '-rotate-6'}`
+                    },
+                        el('div', {
+                            className: 'w-full h-full rounded-full border border-dashed border-white/80 flex flex-col items-center justify-center text-white'
+                        },
+                            el('i', { className: `ph-fill ${i === 10 ? 'ph-crown' : 'ph-star'} text-lg leading-none text-yellow-200 drop-shadow-xs` }),
+                            el('span', { className: 'text-[8px] font-bold leading-none mt-0.5 tracking-tight', textContent: 'ปั๊มแล้ว' })
+                        )
+                    );
+                    grid.appendChild(stampOuter);
+                } else {
+                    const emptySlot = el('div', {
+                        className: 'aspect-square rounded-full bg-blue-50/60 border-2 border-dashed border-blue-200 flex flex-col items-center justify-center text-blue-300'
+                    },
+                        i === 10
+                            ? el('i', { className: 'ph ph-gift text-lg text-blue-300' })
+                            : el('span', { className: 'text-xs font-bold', textContent: String(i) })
+                    );
+                    grid.appendChild(emptySlot);
+                }
+            }
+        }
+
+        function renderCustomerBanksUI(banks) {
+            const container = document.getElementById('customer-bank-list');
+            if (!container) return;
+            container.innerHTML = '';
+            if (!banks || banks.length === 0) {
+                container.appendChild(el('p', { className: 'text-slate-400', textContent: 'ยังไม่ได้ระบุบัญชีธนาคาร' }));
+                return;
+            }
+            banks.forEach(b => {
+                container.appendChild(
+                    el('div', { className: 'bg-blue-50/60 px-3 py-2 rounded-xl flex justify-between items-center' },
+                        el('div', {},
+                            el('p', { className: 'font-semibold text-blue-900', textContent: `${b.bank_name} • ${b.acc_number}` }),
+                            el('p', { className: 'text-[11px] text-slate-500', textContent: `ชื่อบัญชี: ${b.acc_name}` })
+                        )
+                    )
+                );
+            });
+        }
+
+        async function fetchCustomerBanks() {
+            const container = document.getElementById('customer-bank-list');
+            if (!container) return;
+            if (appState.cache.banks) {
+                renderCustomerBanksUI(appState.cache.banks);
+            } else {
+                container.innerHTML = '';
+                container.appendChild(el('p', { className: 'text-slate-400', textContent: 'กำลังโหลดข้อมูลบัญชี...' }));
+            }
+            try {
+                const { data: banks, error } = await sbClient.from('banks').select('*').order('created_at', { ascending: false });
+                if (!error && banks) {
+                    appState.cache.banks = banks;
+                    renderCustomerBanksUI(appState.cache.banks);
+                }
+            } catch (e) {
+                if (!appState.cache.banks) {
+                    container.innerHTML = '';
+                    container.appendChild(el('p', { className: 'text-red-400', textContent: 'โหลดข้อมูลบัญชีไม่สำเร็จ' }));
+                }
+            }
+        }
+
+        function renderRewardsGridUI(rewards) {
+            const grid = document.getElementById('rewards-grid');
+            grid.innerHTML = '';
+            if (!rewards || rewards.length === 0) {
+                grid.appendChild(el('p', { className: 'col-span-2 text-center text-slate-400 text-sm py-8', textContent: 'ยังไม่มีของรางวัลในขณะนี้' }));
+                return;
+            }
+            const currentPoints = (appState.profile && appState.profile.points) ? appState.profile.points : 0;
+            rewards.forEach(r => {
+                const canRedeem = currentPoints >= r.points && r.stock > 0;
+                const card = el('div', { className: 'bg-white rounded-2xl p-4 border border-slate-100 shadow-sm flex flex-col items-center text-center relative overflow-hidden' },
+                    r.stock === 0 ? el('div', { className: 'absolute inset-0 bg-white/60 backdrop-blur-[1px] flex items-center justify-center z-10' },
+                        el('span', { className: 'bg-red-500 text-white px-3 py-1 rounded-full text-xs font-bold rotate-[-10deg]', textContent: 'หมดแล้ว' })
+                    ) : null,
+                    el('div', { className: 'w-12 h-12 bg-blue-50 text-blue-500 rounded-full flex items-center justify-center mb-3' },
+                        el('i', { className: `ph ${r.icon || 'ph-gift'} text-2xl` })
+                    ),
+                    el('h3', { className: 'font-medium text-slate-700 text-sm mb-1', textContent: r.name }),
+                    el('p', { className: 'text-xs text-slate-500 mb-3', textContent: `เหลือ: ${r.stock} ชิ้น` }),
+                    el('div', { className: 'mt-auto w-full' },
+                        el('button', {
+                            type: 'button',
+                            className: `w-full py-1.5 rounded-xl text-xs font-bold transition-all ${canRedeem ? 'bg-cyan-500 text-white hover:bg-cyan-600 shadow-md shadow-cyan-500/20' : 'bg-slate-100 text-slate-400'}`,
+                            disabled: !canRedeem,
+                            onclick: () => redeemReward(r),
+                            textContent: `ใช้ ${r.points} แต้ม`
+                        })
+                    )
+                );
+                grid.appendChild(card);
+            });
+        }
+
+        async function fetchAndRenderRewards() {
+            const grid = document.getElementById('rewards-grid');
+            if (appState.cache.rewards) {
+                renderRewardsGridUI(appState.cache.rewards);
+            } else {
+                grid.innerHTML = '';
+                grid.appendChild(el('p', { className: 'col-span-2 text-center text-slate-400 text-sm py-8', textContent: 'กำลังโหลดของรางวัล...' }));
+            }
+
+            try {
+                const { data: rewards, error } = await sbClient.from('rewards').select('*').order('points', { ascending: true });
+                if (error) throw error;
+                appState.cache.rewards = rewards || [];
+                renderRewardsGridUI(appState.cache.rewards);
+            } catch (err) {
+                if (!appState.cache.rewards) {
+                    grid.innerHTML = '';
+                    grid.appendChild(el('p', { className: 'col-span-2 text-center text-red-400 text-sm py-8', textContent: 'ไม่สามารถโหลดของรางวัลได้' }));
+                }
+            }
+        }
+
+        function renderHistoryListUI(history) {
+            const ul = document.getElementById('history-list');
+            ul.innerHTML = '';
+            if (!history || history.length === 0) {
+                ul.appendChild(el('li', { className: 'p-8 text-center text-slate-400 text-sm', textContent: 'ยังไม่มีประวัติการทำรายการ' }));
+                return;
+            }
+            history.forEach(h => {
+                const isEarn = h.type === 'earn';
+                ul.appendChild(
+                    el('li', { className: 'p-4 flex items-center justify-between hover:bg-slate-50 transition' },
+                        el('div', { className: 'flex items-center gap-3' },
+                            el('div', { className: `w-10 h-10 rounded-full flex items-center justify-center ${isEarn ? 'bg-emerald-50 text-emerald-500' : 'bg-orange-50 text-orange-500'}` },
+                                el('i', { className: `ph ${isEarn ? 'ph-trend-up' : 'ph-trend-down'} text-xl` })
+                            ),
+                            el('div', {},
+                                el('p', { className: 'text-sm font-medium text-slate-700', textContent: h.action }),
+                                el('p', { className: 'text-[10px] text-slate-400', textContent: formatDate(h.created_at) })
+                            )
+                        ),
+                        el('span', { className: `font-bold ${isEarn ? 'text-emerald-500' : 'text-orange-500'}`, textContent: `${isEarn ? '+' : '-'}${h.amount}` })
+                    )
+                );
+            });
+        }
+
+        async function fetchAndRenderHistory() {
+            const ul = document.getElementById('history-list');
+            if (appState.cache.history) {
+                renderHistoryListUI(appState.cache.history);
+            } else {
+                ul.innerHTML = '';
+                ul.appendChild(el('li', { className: 'p-8 text-center text-slate-400 text-sm', textContent: 'กำลังโหลดประวัติ...' }));
+            }
+
+            try {
+                const { data: history, error } = await sbClient.from('history')
+                    .select('*')
+                    .eq('user_id', appState.session.user.id)
+                    .order('created_at', { ascending: false })
+                    .limit(50);
+
+                if (error) throw error;
+                appState.cache.history = history || [];
+                renderHistoryListUI(appState.cache.history);
+            } catch (err) {
+                if (!appState.cache.history) {
+                    ul.innerHTML = '';
+                    ul.appendChild(el('li', { className: 'p-8 text-center text-red-400 text-sm', textContent: 'ไม่สามารถโหลดประวัติได้' }));
+                }
+            }
+        }
+
+        // ==========================================
+        // 6. CUSTOMER ACTIONS (SLIP UPLOAD & REDEEM)
+        // ==========================================
+        let currentCompressedImage = null;
+
+        function handleImageSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = (e) => {
+                const img = new Image();
+                img.src = e.target.result;
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const MAX_WIDTH = 480;
+                    let width = img.width;
+                    let height = img.height;
+
+                    if (width > MAX_WIDTH) {
+                        height *= MAX_WIDTH / width;
+                        width = MAX_WIDTH;
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, width, height);
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    currentCompressedImage = canvas.toDataURL('image/jpeg', 0.6);
+
+                    const origSize = (file.size / 1024).toFixed(1);
+                    const newSize = Math.round((currentCompressedImage.length * (3 / 4)) / 1024);
+
+                    document.getElementById('slip-preview-img').src = currentCompressedImage;
+                    document.getElementById('compress-info').textContent = `บีบอัดจาก ${origSize}KB เหลือ ~${newSize}KB`;
+
+                    document.getElementById('upload-prompt').classList.add('hidden');
+                    document.getElementById('preview-area').classList.remove('hidden');
+                    document.getElementById('preview-area').classList.add('fade-in');
+                };
+            };
+        }
+
+        function resetUpload() {
+            document.getElementById('slip-input').value = '';
+            currentCompressedImage = null;
+            document.getElementById('upload-prompt').classList.remove('hidden');
+            document.getElementById('preview-area').classList.add('hidden');
+        }
+
+        function dataURItoBlob(dataURI) {
+            const byteString = atob(dataURI.split(',')[1]);
+            const mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
+            const ab = new ArrayBuffer(byteString.length);
+            const ia = new Uint8Array(ab);
+            for (let i = 0; i < byteString.length; i++) {
+                ia[i] = byteString.charCodeAt(i);
+            }
+            return new Blob([ab], { type: mimeString });
+        }
+
+        async function submitSlip() {
+            if (!currentCompressedImage || appState.isProcessing) return;
+            appState.isProcessing = true;
+
+            const btnSub = document.getElementById('btn-submit-slip');
+            const btnCan = document.getElementById('btn-cancel-slip');
+            btnSub.disabled = true;
+            btnCan.disabled = true;
+            btnSub.textContent = 'กำลังอัปโหลด...';
+
+            try {
+                let finalImageUrl = currentCompressedImage;
+
+                // ลองอัปโหลดเข้า Storage Bucket 'slips' หากยังไม่ได้สร้าง Bucket จะบันทึกรูปที่บีบอัดแล้วแทนอัตโนมัติ
+                if (!appState.storageUnavailable) {
+                    const blob = dataURItoBlob(currentCompressedImage);
+                    const fileName = `${appState.session.user.id}-${Date.now()}.jpg`;
+
+                    const { error: uploadError } = await sbClient.storage
+                        .from('slips')
+                        .upload(fileName, blob, { contentType: 'image/jpeg' });
+
+                    if (!uploadError) {
+                        const { data: { publicUrl } } = sbClient.storage.from('slips').getPublicUrl(fileName);
+                        finalImageUrl = publicUrl;
+                    } else {
+                        appState.storageUnavailable = true;
+                    }
+                }
+
+                // ตรวจสอบสลิปซ้ำเบื้องต้น (กรณีเก็บแบบบีบอัดในตาราง)
+                if (finalImageUrl.startsWith('data:image')) {
+                    const { data: existing } = await sbClient.from('slips')
+                        .select('id')
+                        .eq('user_id', appState.session.user.id)
+                        .eq('image_url', finalImageUrl)
+                        .limit(1);
+                    if (existing && existing.length > 0) {
+                        throw new Error('คุณเคยอัปโหลดสลิปนี้ไปแล้ว!');
+                    }
+                }
+
+                const currentPoints = (appState.profile && appState.profile.points) ? appState.profile.points : 0;
+                const newPoints = currentPoints + 1;
+
+                const [slipRes, profRes] = await Promise.all([
+                    sbClient.from('slips').insert({
+                        user_id: appState.session.user.id,
+                        image_url: finalImageUrl
+                    }),
+                    sbClient.from('profiles')
+                        .update({ points: newPoints })
+                        .eq('id', appState.session.user.id),
+                    sbClient.from('history').insert({
+                        user_id: appState.session.user.id,
+                        action: 'อัปโหลดสลิป',
+                        amount: 1,
+                        type: 'earn'
+                    })
+                ]);
+
+                if (slipRes.error) throw new Error('บันทึกข้อมูลสลิปล้มเหลว: ' + slipRes.error.message);
+                if (profRes.error) throw new Error('อัปเดตแต้มล้มเหลว');
+
+                if (appState.profile) appState.profile.points = newPoints;
+                appState.cache.history = null;
+                appState.cache.adminSlips = null;
+                document.getElementById('display-user-points').textContent = newPoints;
+                renderStampCard(true);
+
+                showToast('ปั๊มแต้ม +1 สำเร็จ!', 'success');
+                resetUpload();
+            } catch (e) {
+                console.error(e);
+                showToast(e.message || 'อัปโหลดไม่สำเร็จ', 'error');
+            } finally {
+                appState.isProcessing = false;
+                btnSub.disabled = false;
+                btnCan.disabled = false;
+                btnSub.textContent = 'ยืนยันอัปโหลด';
+            }
+        }
+
+        async function redeemReward(reward) {
+            if (appState.isProcessing) return;
+            appState.isProcessing = true;
+
+            try {
+                const [profRes, rewRes] = await Promise.all([
+                    sbClient.from('profiles').select('points').eq('id', appState.session.user.id).single(),
+                    sbClient.from('rewards').select('stock').eq('id', reward.id).single()
+                ]);
+
+                const latestProfile = profRes.data;
+                const latestReward = rewRes.data;
+
+                if (!latestProfile || latestProfile.points < reward.points) {
+                    throw new Error('แต้มไม่เพียงพอ');
+                }
+                if (!latestReward || latestReward.stock <= 0) {
+                    throw new Error('ของรางวัลหมดแล้ว');
+                }
+
+                const newPoints = latestProfile.points - reward.points;
+                const newStock = latestReward.stock - 1;
+
+                const [updateProfRes] = await Promise.all([
+                    sbClient.from('profiles').update({ points: newPoints }).eq('id', appState.session.user.id),
+                    sbClient.from('rewards').update({ stock: newStock }).eq('id', reward.id),
+                    sbClient.from('history').insert({
+                        user_id: appState.session.user.id,
+                        action: `แลก ${reward.name}`,
+                        amount: reward.points,
+                        type: 'spend'
+                    })
+                ]);
+                if (updateProfRes.error) throw updateProfRes.error;
+
+                appState.profile.points = newPoints;
+                appState.cache.history = null;
+                if (appState.cache.rewards) {
+                    const target = appState.cache.rewards.find(r => r.id === reward.id);
+                    if (target) target.stock = newStock;
+                    renderRewardsGridUI(appState.cache.rewards);
+                }
+                document.getElementById('display-user-points').textContent = newPoints;
+                renderStampCard(false);
+                showToast(`แลก ${reward.name} สำเร็จ!`, 'success');
+            } catch (e) {
+                console.error(e);
+                showToast(e.message || 'เกิดข้อผิดพลาดในการแลกของรางวัล', 'error');
+            } finally {
+                appState.isProcessing = false;
+            }
+        }
+
+        // ==========================================
+        // 7. ADMIN VIEWS & ACTIONS
+        // ==========================================
+        function switchAdminTab(tab) {
+            if (!appState.isAdmin) return;
+
+            document.querySelectorAll('.admin-section').forEach(s => s.classList.add('hidden'));
+            const active = document.getElementById(`admin-tab-${tab}`);
+            if (active) {
+                active.classList.remove('hidden');
+                active.classList.add('fade-in');
+            }
+
+            document.querySelectorAll('.admin-tab').forEach(btn => {
+                if (btn.id === `tab-${tab}`) {
+                    btn.classList.add('bg-blue-100', 'text-blue-700');
+                    btn.classList.remove('text-slate-500', 'hover:bg-slate-100');
+                } else {
+                    btn.classList.remove('bg-blue-100', 'text-blue-700');
+                    btn.classList.add('text-slate-500', 'hover:bg-slate-100');
+                }
+            });
+
+            if (tab === 'settings') renderAdminSettingsUI();
+            if (tab === 'slips') {
+                appState.selectedSlipUserId = null;
+                renderAdminSlips();
+            }
+            if (tab === 'customers') renderAdminCustomers();
+            if (tab === 'banks') renderAdminBanksList();
+            if (tab === 'rewards') renderAdminRewardsList();
+        }
+
+        // --- Admin: Settings ---
+        function renderAdminSettingsUI() {
+            const enabledEl = document.getElementById('setting-system-enabled');
+            if (enabledEl) enabledEl.checked = !!appState.settings.system_enabled;
+            const modeInput = document.querySelector(`input[name="acc-mode"][value="${appState.settings.acc_mode || 'slip'}"]`);
+            if (modeInput) modeInput.checked = true;
+            updateLiveStatusIndicators();
+        }
+
+        let settingsTimeout;
+        function updateSettings() {
+            clearTimeout(settingsTimeout);
+            settingsTimeout = setTimeout(async () => {
+                const system_enabled = document.getElementById('setting-system-enabled').checked;
+                const modeEl = document.querySelector('input[name="acc-mode"]:checked');
+                const acc_mode = modeEl ? modeEl.value : 'slip';
+
+                try {
+                    const { error } = await sbClient.from('settings')
+                        .update({ system_enabled, acc_mode })
+                        .eq('id', 1);
+                    if (error) throw error;
+                    appState.settings = { system_enabled, acc_mode };
+                    updateLiveStatusIndicators();
+                    showToast('บันทึกการตั้งค่าแล้ว', 'success');
+                } catch (e) {
+                    console.error(e);
+                    showToast('บันทึกการตั้งค่าล้มเหลว', 'error');
+                }
+            }, 300);
+        }
+
+        // --- Admin: Slips (Grouped by Customer + Detail View) ---
+        function openSlipImageModal(imgUrl, username, createdAt) {
+            document.getElementById('slip-modal-user').textContent = `สลิปจาก: ${username}`;
+            document.getElementById('slip-modal-date').textContent = formatDate(createdAt);
+            document.getElementById('slip-modal-img').src = imgUrl;
+            document.getElementById('slip-modal').classList.remove('hidden');
+        }
+
+        function backToSlipsOverview() {
+            appState.selectedSlipUserId = null;
+            document.getElementById('admin-slips-detail').classList.add('hidden');
+            document.getElementById('admin-slips-overview').classList.remove('hidden');
+            renderSlipsOverviewUI();
+        }
+
+        function openCustomerSlipsDetail(userId) {
+            appState.selectedSlipUserId = userId;
+            document.getElementById('admin-slips-overview').classList.add('hidden');
+            document.getElementById('admin-slips-detail').classList.remove('hidden');
+            renderCustomerSlipsDetailUI(userId);
+        }
+
+        function renderSlipsOverviewUI() {
+            const list = document.getElementById('admin-slip-list');
+            const countEl = document.getElementById('admin-slip-count');
+            const slips = appState.cache.adminSlips || [];
+            const profileMap = appState.cache.adminProfilesMap || {};
+
+            countEl.textContent = `รวม ${slips.length} ใบ`;
+            list.innerHTML = '';
+
+            if (slips.length === 0) {
+                list.appendChild(el('p', { className: 'text-center text-slate-400 text-sm py-6', textContent: 'ยังไม่มีสลิปที่อัปโหลด' }));
+                return;
+            }
+
+            // จัดกลุ่มสลิปแยกตามลูกค้าแต่ละคน
+            const groupedMap = new Map();
+            slips.forEach(s => {
+                if (!groupedMap.has(s.user_id)) {
+                    groupedMap.set(s.user_id, {
+                        userId: s.user_id,
+                        slips: [],
+                        latestDate: s.created_at
+                    });
+                }
+                groupedMap.get(s.user_id).slips.push(s);
+            });
+
+            const groups = Array.from(groupedMap.values());
+            groups.forEach(group => {
+                const profile = profileMap[group.userId] || { id: group.userId, username: 'ไม่ทราบชื่อ', points: 0 };
+                const slipCount = group.slips.length;
+
+                list.appendChild(
+                    el('div', {
+                        className: 'bg-white p-4 rounded-2xl border border-slate-200 shadow-sm hover:border-blue-300 hover:shadow-md transition cursor-pointer flex flex-col gap-3',
+                        onclick: () => openCustomerSlipsDetail(group.userId)
+                    },
+                        el('div', { className: 'flex items-center justify-between gap-3' },
+                            el('div', { className: 'flex items-center gap-3 min-w-0' },
+                                el('div', {
+                                    className: 'w-11 h-11 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-bold text-base flex-shrink-0',
+                                    textContent: (profile.username || '?').substring(0, 1).toUpperCase()
+                                }),
+                                el('div', { className: 'min-w-0' },
+                                    el('p', { className: 'font-bold text-blue-900 text-sm truncate', textContent: profile.username }),
+                                    el('p', { className: 'text-xs text-slate-500 mt-0.5' },
+                                        'อัปโหลด ',
+                                        el('span', { className: 'font-bold text-blue-600', textContent: `${slipCount} สลิป` }),
+                                        ' • แต้ม: ',
+                                        el('span', { className: 'font-semibold text-cyan-600', textContent: profile.points })
+                                    )
+                                )
+                            ),
+                            el('span', {
+                                className: 'px-2.5 py-1 rounded-full bg-blue-50 text-blue-600 text-xs font-bold flex-shrink-0 inline-flex items-center gap-1.5'
+                            },
+                                el('span', { className: 'relative flex h-2 w-2' },
+                                    el('span', { className: 'animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75' }),
+                                    el('span', { className: 'relative inline-flex rounded-full h-2 w-2 bg-blue-500 led-glow-blue' })
+                                ),
+                                `${slipCount} ใบ`
+                            )
+                        ),
+                        el('div', { className: 'flex items-center justify-between pt-2 border-t border-slate-100 text-xs' },
+                            el('span', { className: 'text-[11px] text-slate-400', textContent: `ล่าสุด: ${formatDate(group.latestDate)}` }),
+                            el('span', { className: 'text-blue-500 font-medium flex items-center gap-1' },
+                                'กดเข้าเพื่อตรวจสอบสลิป',
+                                el('i', { className: 'ph ph-caret-right' })
+                            )
+                        )
+                    )
+                );
+            });
+        }
+
+        function renderCustomerSlipsDetailUI(userId) {
+            const slips = (appState.cache.adminSlips || []).filter(s => s.user_id === userId);
+            const profile = (appState.cache.adminProfilesMap && appState.cache.adminProfilesMap[userId])
+                ? appState.cache.adminProfilesMap[userId]
+                : { id: userId, username: 'ไม่ทราบชื่อ', points: 0 };
+
+            document.getElementById('detail-slip-username').textContent = profile.username;
+            document.getElementById('detail-slip-count').textContent = slips.length;
+            document.getElementById('detail-slip-points').textContent = profile.points || 0;
+
+            const actionBox = document.getElementById('detail-slip-point-actions');
+            actionBox.innerHTML = '';
+            actionBox.appendChild(
+                el('button', {
+                    type: 'button',
+                    className: 'w-8 h-8 rounded-full bg-slate-100 text-slate-600 hover:bg-red-100 hover:text-red-500 transition flex items-center justify-center',
+                    title: 'ลด 1 แต้ม',
+                    onclick: () => adminAdjustUserPoints(profile, -1)
+                }, el('i', { className: 'ph ph-minus' }))
+            );
+            actionBox.appendChild(
+                el('button', {
+                    type: 'button',
+                    className: 'w-8 h-8 rounded-full bg-slate-100 text-slate-600 hover:bg-emerald-100 hover:text-emerald-600 transition flex items-center justify-center',
+                    title: 'เพิ่ม 1 แต้ม',
+                    onclick: () => adminAdjustUserPoints(profile, 1)
+                }, el('i', { className: 'ph ph-plus' }))
+            );
+
+            const grid = document.getElementById('admin-slip-detail-grid');
+            grid.innerHTML = '';
+
+            if (slips.length === 0) {
+                grid.appendChild(el('p', { className: 'col-span-2 text-center text-slate-400 text-sm py-8', textContent: 'ลูกค้ารายนี้ไม่มีสลิปเหลืออยู่แล้ว' }));
+                return;
+            }
+
+            slips.forEach((s, index) => {
+                grid.appendChild(
+                    el('div', { className: 'bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col' },
+                        el('div', {
+                            className: 'relative bg-slate-50 aspect-[3/4] cursor-pointer overflow-hidden',
+                            onclick: () => openSlipImageModal(s.image_url, profile.username, s.created_at)
+                        },
+                            el('img', {
+                                src: s.image_url,
+                                loading: 'lazy',
+                                className: 'w-full h-full object-cover hover:scale-105 transition-transform duration-200'
+                            }),
+                            el('span', {
+                                className: 'absolute top-2 left-2 bg-slate-900/60 text-white text-[10px] font-medium px-2 py-0.5 rounded-full backdrop-blur-xs',
+                                textContent: `#${slips.length - index}`
+                            })
+                        ),
+                        el('div', { className: 'p-2.5 flex items-center justify-between gap-1 bg-white' },
+                            el('div', { className: 'min-w-0' },
+                                el('p', { className: 'text-[10px] text-slate-400 truncate', textContent: formatDate(s.created_at) }),
+                                el('button', {
+                                    type: 'button',
+                                    className: 'text-[11px] text-blue-500 font-medium hover:underline',
+                                    onclick: () => openSlipImageModal(s.image_url, profile.username, s.created_at),
+                                    textContent: 'ดูรูปเต็ม'
+                                })
+                            ),
+                            el('button', {
+                                type: 'button',
+                                className: 'w-7 h-7 rounded-full text-red-400 hover:bg-red-50 hover:text-red-500 transition flex items-center justify-center flex-shrink-0',
+                                title: 'ลบสลิปนี้',
+                                onclick: () => deleteSlip(s.id)
+                            }, el('i', { className: 'ph ph-trash text-sm' }))
+                        )
+                    )
+                );
+            });
+        }
+
+        async function renderAdminSlips() {
+            const refBox = document.getElementById('admin-slips-bank-ref');
+            const list = document.getElementById('admin-slip-list');
+
+            if (!appState.cache.adminSlips) {
+                list.innerHTML = '';
+                list.appendChild(el('p', { className: 'text-center text-slate-400 text-sm py-4', textContent: 'กำลังโหลดรายการสลิป...' }));
+            }
+
+            try {
+                const [banksRes, slipsRes, profilesRes] = await Promise.all([
+                    sbClient.from('banks').select('*').order('created_at', { ascending: false }),
+                    sbClient.from('slips').select('*').order('created_at', { ascending: false }).limit(500),
+                    sbClient.from('profiles').select('id, username, points')
+                ]);
+
+                refBox.innerHTML = '';
+                const banks = banksRes.data || [];
+                appState.cache.banks = banks;
+                if (banks.length === 0) {
+                    refBox.appendChild(el('p', { className: 'text-slate-400', textContent: 'ยังไม่มีบัญชีธนาคาร (ไปเพิ่มได้ที่แท็บ บัญชี)' }));
+                } else {
+                    banks.forEach(b => {
+                        refBox.appendChild(el('p', { textContent: `• ${b.bank_name}: ${b.acc_number} (${b.acc_name})` }));
+                    });
+                }
+
+                appState.cache.adminSlips = slipsRes.data || [];
+                const profileMap = {};
+                (profilesRes.data || []).forEach(p => { profileMap[p.id] = p; });
+                appState.cache.adminProfilesMap = profileMap;
+
+                if (appState.selectedSlipUserId) {
+                    document.getElementById('admin-slips-overview').classList.add('hidden');
+                    document.getElementById('admin-slips-detail').classList.remove('hidden');
+                    renderCustomerSlipsDetailUI(appState.selectedSlipUserId);
+                } else {
+                    document.getElementById('admin-slips-detail').classList.add('hidden');
+                    document.getElementById('admin-slips-overview').classList.remove('hidden');
+                    renderSlipsOverviewUI();
+                }
+            } catch (e) {
+                console.error(e);
+                list.innerHTML = '';
+                list.appendChild(el('p', { className: 'text-center text-red-400 text-sm py-4', textContent: 'โหลดรายการสลิปล้มเหลว' }));
+            }
+        }
+
+        function deleteSlip(id) {
+            openConfirmModal('คุณต้องการลบสลิปนี้ใช่หรือไม่?', async () => {
+                try {
+                    const { error } = await sbClient.from('slips').delete().eq('id', id);
+                    if (error) throw error;
+                    showToast('ลบสลิปแล้ว', 'info');
+                    renderAdminSlips();
+                } catch (e) {
+                    showToast('ลบสลิปไม่สำเร็จ', 'error');
+                }
+            });
+        }
+
+        // --- Admin: Customers ---
+        async function renderAdminCustomers() {
+            const list = document.getElementById('admin-user-list');
+            if (!appState.cache.adminUsers) {
+                list.innerHTML = '';
+                list.appendChild(el('p', { className: 'text-center text-slate-400 text-sm py-4', textContent: 'กำลังโหลดข้อมูลลูกค้า...' }));
+            }
+
+            try {
+                const [usersRes, slipsRes, historyRes] = await Promise.all([
+                    sbClient.from('profiles').select('*').order('created_at', { ascending: false }),
+                    sbClient.from('slips').select('user_id'),
+                    sbClient.from('history').select('user_id, action').order('created_at', { ascending: false }).limit(200)
+                ]);
+
+                if (usersRes.error) throw usersRes.error;
+                const users = usersRes.data || [];
+                const slips = slipsRes.data || [];
+                const history = historyRes.data || [];
+                appState.cache.adminUsers = users;
+
+                document.getElementById('admin-user-count').textContent = `${users.length} คน`;
+                list.innerHTML = '';
+
+                if (users.length === 0) {
+                    list.appendChild(el('p', { className: 'text-center text-slate-400 text-sm py-4', textContent: 'ยังไม่มีลูกค้า' }));
+                    return;
+                }
+
+                users.forEach(u => {
+                    const userSlips = slips.filter(s => s.user_id === u.id);
+                    const userHist = history.filter(h => h.user_id === u.id);
+                    const lastAction = userHist.length > 0 ? userHist[0].action : 'ยังไม่มีประวัติ';
+
+                    list.appendChild(
+                        el('div', { className: 'bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-3' },
+                            el('div', { className: 'flex justify-between items-center gap-2' },
+                                el('div', { className: 'flex items-center gap-3 min-w-0' },
+                                    el('div', {
+                                        className: 'w-10 h-10 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-bold flex-shrink-0',
+                                        textContent: (u.username || '?').substring(0, 1).toUpperCase()
+                                    }),
+                                    el('div', { className: 'min-w-0' },
+                                        el('p', { className: 'font-bold text-blue-900 truncate', textContent: u.username }),
+                                        el('p', { className: 'text-xs text-slate-500' },
+                                            'แต้ม: ', el('span', { className: 'font-bold text-blue-600', textContent: u.points })
+                                        )
+                                    )
+                                ),
+                                el('div', { className: 'flex gap-1.5 flex-shrink-0' },
+                                    el('button', {
+                                        type: 'button',
+                                        className: 'w-8 h-8 rounded-full bg-slate-100 text-slate-600 hover:bg-red-100 hover:text-red-500 transition flex items-center justify-center',
+                                        title: 'ลด 1 แต้ม',
+                                        onclick: () => adminAdjustUserPoints(u, -1)
+                                    }, el('i', { className: 'ph ph-minus' })),
+                                    el('button', {
+                                        type: 'button',
+                                        className: 'w-8 h-8 rounded-full bg-slate-100 text-slate-600 hover:bg-emerald-100 hover:text-emerald-600 transition flex items-center justify-center',
+                                        title: 'เพิ่ม 1 แต้ม',
+                                        onclick: () => adminAdjustUserPoints(u, 1)
+                                    }, el('i', { className: 'ph ph-plus' })),
+                                    el('button', {
+                                        type: 'button',
+                                        className: 'w-8 h-8 rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 transition flex items-center justify-center',
+                                        title: 'แก้ไขข้อมูล',
+                                        onclick: () => openEditUserModal(u)
+                                    }, el('i', { className: 'ph ph-pencil-simple' })),
+                                    el('button', {
+                                        type: 'button',
+                                        className: 'w-8 h-8 rounded-full bg-slate-100 text-slate-600 hover:bg-blue-100 hover:text-blue-600 transition flex items-center justify-center',
+                                        title: 'ดูประวัติ',
+                                        onclick: () => openUserHistoryModal(u)
+                                    }, el('i', { className: 'ph ph-clock-counter-clockwise' }))
+                                )
+                            ),
+                            el('div', { className: 'bg-slate-50 p-2 rounded-lg text-xs text-slate-500 flex justify-between' },
+                                el('span', { className: 'truncate pr-2', textContent: `ล่าสุด: ${lastAction}` }),
+                                el('span', { className: 'flex-shrink-0', textContent: `สลิป: ${userSlips.length} ใบ` })
+                            )
+                        )
+                    );
+                });
+            } catch (e) {
+                console.error(e);
+                list.innerHTML = '';
+                list.appendChild(el('p', { className: 'text-center text-red-500 text-sm py-4', textContent: 'ไม่สามารถโหลดข้อมูลลูกค้าได้' }));
+            }
+        }
+
+        async function adminAdjustUserPoints(user, amount) {
+            if (appState.isProcessing) return;
+            appState.isProcessing = true;
+
+            try {
+                const newPoints = (user.points || 0) + amount;
+                if (newPoints < 0) throw new Error('แต้มติดลบไม่ได้');
+
+                const [profRes] = await Promise.all([
+                    sbClient.from('profiles').update({ points: newPoints }).eq('id', user.id),
+                    sbClient.from('history').insert({
+                        user_id: user.id,
+                        action: amount > 0 ? 'แอดมินเพิ่มแต้ม' : 'แอดมินลดแต้ม',
+                        amount: Math.abs(amount),
+                        type: amount > 0 ? 'earn' : 'spend'
+                    })
+                ]);
+                if (profRes.error) throw profRes.error;
+
+                user.points = newPoints;
+                if (appState.cache.adminProfilesMap && appState.cache.adminProfilesMap[user.id]) {
+                    appState.cache.adminProfilesMap[user.id].points = newPoints;
+                }
+                if (appState.profile && appState.profile.id === user.id) {
+                    appState.profile.points = newPoints;
+                }
+
+                showToast(`ปรับปรุงแต้มให้ ${user.username} แล้ว`, 'success');
+                if (appState.selectedSlipUserId === user.id) {
+                    renderCustomerSlipsDetailUI(user.id);
+                }
+                renderAdminCustomers();
+            } catch (e) {
+                showToast(e.message || 'เกิดข้อผิดพลาด', 'error');
+            } finally {
+                appState.isProcessing = false;
+            }
+        }
+
+        function openEditUserModal(user) {
+            document.getElementById('edit-user-id').value = user.id;
+            document.getElementById('edit-user-name').value = user.username || '';
+            document.getElementById('edit-user-points').value = user.points || 0;
+            document.getElementById('edit-user-modal').classList.remove('hidden');
+        }
+
+        async function saveUserEdit(e) {
+            e.preventDefault();
+            const id = document.getElementById('edit-user-id').value;
+            const username = document.getElementById('edit-user-name').value.trim();
+            const points = parseInt(document.getElementById('edit-user-points').value, 10);
+            const btn = document.getElementById('btn-save-user-edit');
+
+            if (!username || isNaN(points) || points < 0) {
+                showToast('กรุณากรอกข้อมูลให้ถูกต้อง', 'error');
+                return;
+            }
+
+            btn.disabled = true;
+            try {
+                const { error } = await sbClient.from('profiles').update({ username, points }).eq('id', id);
+                if (error) throw error;
+
+                if (appState.profile && appState.profile.id === id) {
+                    appState.profile.username = username;
+                    appState.profile.points = points;
+                }
+                closeModal('edit-user-modal');
+                showToast('บันทึกข้อมูลลูกค้าแล้ว', 'success');
+                renderAdminCustomers();
+            } catch (err) {
+                showToast(err.message || 'แก้ไขไม่สำเร็จ', 'error');
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function openUserHistoryModal(user) {
+            document.getElementById('user-history-title').textContent = `ประวัติของ ${user.username}`;
+            const ul = document.getElementById('admin-user-history-list');
+            ul.innerHTML = '';
+            ul.appendChild(el('li', { className: 'py-6 text-center text-xs text-slate-400', textContent: 'กำลังโหลด...' }));
+            document.getElementById('user-history-modal').classList.remove('hidden');
+
+            try {
+                const { data: history, error } = await sbClient.from('history')
+                    .select('*')
+                    .eq('user_id', user.id)
+                    .order('created_at', { ascending: false })
+                    .limit(30);
+                if (error) throw error;
+
+                ul.innerHTML = '';
+                if (!history || history.length === 0) {
+                    ul.appendChild(el('li', { className: 'py-6 text-center text-xs text-slate-400', textContent: 'ยังไม่มีประวัติการทำรายการ' }));
+                    return;
+                }
+                history.forEach(h => {
+                    const isEarn = h.type === 'earn';
+                    ul.appendChild(
+                        el('li', { className: 'py-3 flex items-center justify-between' },
+                            el('div', {},
+                                el('p', { className: 'text-xs font-medium text-slate-700', textContent: h.action }),
+                                el('p', { className: 'text-[10px] text-slate-400', textContent: formatDate(h.created_at) })
+                            ),
+                            el('span', { className: `text-xs font-bold ${isEarn ? 'text-emerald-500' : 'text-orange-500'}`, textContent: `${isEarn ? '+' : '-'}${h.amount}` })
+                        )
+                    );
+                });
+            } catch (e) {
+                ul.innerHTML = '';
+                ul.appendChild(el('li', { className: 'py-6 text-center text-xs text-red-400', textContent: 'โหลดประวัติไม่สำเร็จ' }));
+            }
+        }
+
+        // --- Admin: Banks (Add / Edit / Delete) ---
+        async function renderAdminBanksList() {
+            const list = document.getElementById('admin-bank-list');
+            if (!appState.cache.banks) {
+                list.innerHTML = '';
+                list.appendChild(el('p', { className: 'text-center text-slate-400 text-sm py-4', textContent: 'กำลังโหลดบัญชี...' }));
+            }
+
+            try {
+                const { data: banks, error } = await sbClient.from('banks').select('*').order('created_at', { ascending: false });
+                if (error) throw error;
+                appState.cache.banks = banks || [];
+                list.innerHTML = '';
+
+                if (appState.cache.banks.length === 0) {
+                    list.appendChild(el('p', { className: 'text-center text-slate-400 text-sm py-4', textContent: 'ยังไม่มีบัญชีธนาคาร' }));
+                    return;
+                }
+
+                appState.cache.banks.forEach(b => {
+                    list.appendChild(
+                        el('div', { className: 'bg-slate-50 p-3 rounded-xl border border-slate-100 flex justify-between items-center gap-2' },
+                            el('div', { className: 'min-w-0' },
+                                el('p', { className: 'font-medium text-blue-900 text-sm truncate', textContent: b.bank_name }),
+                                el('p', { className: 'text-xs text-slate-500 truncate', textContent: `${b.acc_number} • ${b.acc_name}` })
+                            ),
+                            el('div', { className: 'flex gap-1 flex-shrink-0' },
+                                el('button', {
+                                    type: 'button',
+                                    className: 'w-8 h-8 rounded-full text-blue-500 hover:bg-blue-100 transition flex items-center justify-center',
+                                    title: 'แก้ไข',
+                                    onclick: () => editBank(b)
+                                }, el('i', { className: 'ph ph-pencil-simple' })),
+                                el('button', {
+                                    type: 'button',
+                                    className: 'w-8 h-8 rounded-full text-red-400 hover:bg-red-50 hover:text-red-500 transition flex items-center justify-center',
+                                    title: 'ลบ',
+                                    onclick: () => deleteBank(b.id)
+                                }, el('i', { className: 'ph ph-trash' }))
+                            )
+                        )
+                    );
+                });
+            } catch (e) {
+                list.innerHTML = '';
+                list.appendChild(el('p', { className: 'text-center text-red-400 text-sm py-4', textContent: 'โหลดบัญชีล้มเหลว' }));
+            }
+        }
+
+        function editBank(b) {
+            document.getElementById('bank-edit-id').value = b.id;
+            document.getElementById('bank-name').value = b.bank_name;
+            document.getElementById('bank-acc-name').value = b.acc_name;
+            document.getElementById('bank-acc-number').value = b.acc_number;
+            document.getElementById('bank-form-title').textContent = 'แก้ไขบัญชีธนาคาร';
+            document.getElementById('btn-cancel-edit-bank').classList.remove('hidden');
+            document.getElementById('btn-add-bank').textContent = 'บันทึกการแก้ไข';
+        }
+
+        function resetBankForm() {
+            document.getElementById('bank-form').reset();
+            document.getElementById('bank-edit-id').value = '';
+            document.getElementById('bank-form-title').textContent = 'เพิ่มบัญชีใหม่';
+            document.getElementById('btn-cancel-edit-bank').classList.add('hidden');
+            document.getElementById('btn-add-bank').textContent = '+ เพิ่มบัญชี';
+        }
+
+        async function saveBank(e) {
+            e.preventDefault();
+            const editId = document.getElementById('bank-edit-id').value;
+            const bank_name = document.getElementById('bank-name').value.trim();
+            const acc_name = document.getElementById('bank-acc-name').value.trim();
+            const acc_number = document.getElementById('bank-acc-number').value.trim();
+            const btn = document.getElementById('btn-add-bank');
+
+            if (!bank_name || !acc_name || !acc_number) {
+                showToast('กรุณากรอกข้อมูลให้ครบถ้วน', 'error');
+                return;
+            }
+
+            btn.disabled = true;
+            try {
+                if (editId) {
+                    const { error } = await sbClient.from('banks').update({ bank_name, acc_name, acc_number }).eq('id', editId);
+                    if (error) throw error;
+                    showToast('แก้ไขบัญชีสำเร็จ', 'success');
+                } else {
+                    const { error } = await sbClient.from('banks').insert({ bank_name, acc_name, acc_number });
+                    if (error) throw error;
+                    showToast('เพิ่มบัญชีสำเร็จ', 'success');
+                }
+                resetBankForm();
+                renderAdminBanksList();
+            } catch (error) {
+                showToast('บันทึกบัญชีล้มเหลว', 'error');
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        function deleteBank(id) {
+            openConfirmModal('ยืนยันการลบบัญชีธนาคารนี้?', async () => {
+                try {
+                    const { error } = await sbClient.from('banks').delete().eq('id', id);
+                    if (error) throw error;
+                    showToast('ลบบัญชีแล้ว', 'info');
+                    renderAdminBanksList();
+                } catch (error) {
+                    showToast('ลบไม่สำเร็จ', 'error');
+                }
+            });
+        }
+
+        // --- Admin: Rewards (Add / Edit / Delete) ---
+        async function renderAdminRewardsList() {
+            const list = document.getElementById('admin-reward-list');
+            if (!appState.cache.rewards) {
+                list.innerHTML = '';
+                list.appendChild(el('p', { className: 'text-center text-slate-400 text-sm py-4', textContent: 'กำลังโหลดของรางวัล...' }));
+            }
+
+            try {
+                const { data: rewards, error } = await sbClient.from('rewards').select('*').order('created_at', { ascending: false });
+                if (error) throw error;
+                appState.cache.rewards = rewards || [];
+                list.innerHTML = '';
+
+                if (appState.cache.rewards.length === 0) {
+                    list.appendChild(el('p', { className: 'text-center text-slate-400 text-sm py-4', textContent: 'ยังไม่มีของรางวัล' }));
+                    return;
+                }
+
+                appState.cache.rewards.forEach(r => {
+                    list.appendChild(
+                        el('div', { className: 'bg-slate-50 p-3 rounded-xl border border-slate-100 flex justify-between items-center gap-2' },
+                            el('div', { className: 'flex items-center gap-3 min-w-0' },
+                                el('div', { className: 'w-10 h-10 bg-white rounded-full flex items-center justify-center text-blue-500 shadow-sm flex-shrink-0' },
+                                    el('i', { className: `ph ${r.icon || 'ph-gift'}` })
+                                ),
+                                el('div', { className: 'min-w-0' },
+                                    el('p', { className: 'font-medium text-slate-700 text-sm truncate', textContent: r.name }),
+                                    el('p', { className: 'text-[11px] text-slate-500', textContent: `ใช้ ${r.points} แต้ม • คงเหลือ ${r.stock}` })
+                                )
+                            ),
+                            el('div', { className: 'flex gap-1 flex-shrink-0' },
+                                el('button', {
+                                    type: 'button',
+                                    className: 'w-8 h-8 rounded-full text-blue-500 hover:bg-blue-100 transition flex items-center justify-center',
+                                    title: 'แก้ไข',
+                                    onclick: () => editReward(r)
+                                }, el('i', { className: 'ph ph-pencil-simple' })),
+                                el('button', {
+                                    type: 'button',
+                                    className: 'w-8 h-8 rounded-full text-red-400 hover:bg-red-50 hover:text-red-500 transition flex items-center justify-center',
+                                    title: 'ลบ',
+                                    onclick: () => deleteReward(r.id)
+                                }, el('i', { className: 'ph ph-trash' }))
+                            )
+                        )
+                    );
+                });
+            } catch (e) {
+                list.innerHTML = '';
+                list.appendChild(el('p', { className: 'text-center text-red-400 text-sm py-4', textContent: 'โหลดของรางวัลล้มเหลว' }));
+            }
+        }
+
+        function editReward(r) {
+            document.getElementById('reward-edit-id').value = r.id;
+            document.getElementById('reward-name').value = r.name;
+            document.getElementById('reward-points').value = r.points;
+            document.getElementById('reward-stock').value = r.stock;
+            document.getElementById('reward-form-title').textContent = 'แก้ไขของรางวัล';
+            document.getElementById('btn-cancel-edit-reward').classList.remove('hidden');
+            document.getElementById('btn-add-reward').textContent = 'บันทึกการแก้ไข';
+        }
+
+        function resetRewardForm() {
+            document.getElementById('reward-form').reset();
+            document.getElementById('reward-edit-id').value = '';
+            document.getElementById('reward-form-title').textContent = 'เพิ่มของรางวัลใหม่';
+            document.getElementById('btn-cancel-edit-reward').classList.add('hidden');
+            document.getElementById('btn-add-reward').textContent = '+ เพิ่มของรางวัล';
+        }
+
+        async function saveReward(e) {
+            e.preventDefault();
+            const editId = document.getElementById('reward-edit-id').value;
+            const name = document.getElementById('reward-name').value.trim();
+            const points = parseInt(document.getElementById('reward-points').value, 10);
+            const stock = parseInt(document.getElementById('reward-stock').value, 10);
+            const btn = document.getElementById('btn-add-reward');
+
+            if (!name || isNaN(points) || points < 1 || isNaN(stock) || stock < 0) {
+                showToast('กรุณากรอกข้อมูลให้ถูกต้อง', 'error');
+                return;
+            }
+
+            btn.disabled = true;
+            try {
+                if (editId) {
+                    const { error } = await sbClient.from('rewards').update({ name, points, stock }).eq('id', editId);
+                    if (error) throw error;
+                    showToast('แก้ไขของรางวัลสำเร็จ', 'success');
+                } else {
+                    const icons = ['ph-gift', 'ph-coffee', 'ph-tote', 'ph-umbrella', 'ph-balloon', 'ph-star'];
+                    const icon = icons[Math.floor(Math.random() * icons.length)];
+                    const { error } = await sbClient.from('rewards').insert({ name, points, stock, icon });
+                    if (error) throw error;
+                    showToast('เพิ่มของรางวัลสำเร็จ', 'success');
+                }
+                resetRewardForm();
+                renderAdminRewardsList();
+            } catch (error) {
+                showToast('บันทึกของรางวัลล้มเหลว', 'error');
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        function deleteReward(id) {
+            openConfirmModal('ยืนยันการลบของรางวัลนี้?', async () => {
+                try {
+                    const { error } = await sbClient.from('rewards').delete().eq('id', id);
+                    if (error) throw error;
+                    showToast('ลบของรางวัลแล้ว', 'info');
+                    renderAdminRewardsList();
+                } catch (error) {
+                    showToast('ลบไม่สำเร็จ', 'error');
+                }
+            });
+        }
+
+        // ==========================================
+        // 8. SOFT FALLING SNOW BACKGROUND EFFECT
+        // ==========================================
+        function initSnowfall() {
+            const canvas = document.getElementById('snow-canvas');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return;
+
+            let width = 0;
+            let height = 0;
+            const flakes = [];
+            const FLAKE_COUNT = 42;
+
+            function resizeCanvas() {
+                width = window.innerWidth;
+                height = window.innerHeight;
+                canvas.width = width;
+                canvas.height = height;
+            }
+
+            function createFlake(randomY) {
+                return {
+                    x: Math.random() * width,
+                    y: randomY ? Math.random() * height : -10,
+                    radius: Math.random() * 2.8 + 1.4,
+                    speedY: Math.random() * 0.65 + 0.35,
+                    swaySpeed: Math.random() * 0.015 + 0.008,
+                    swayAmp: Math.random() * 0.6 + 0.25,
+                    angle: Math.random() * Math.PI * 2,
+                    opacity: Math.random() * 0.45 + 0.45,
+                    isIceBlue: Math.random() > 0.45
+                };
+            }
+
+            resizeCanvas();
+            for (let i = 0; i < FLAKE_COUNT; i++) {
+                flakes.push(createFlake(true));
+            }
+            window.addEventListener('resize', resizeCanvas);
+
+            function animateSnow() {
+                ctx.clearRect(0, 0, width, height);
+
+                for (let i = 0; i < flakes.length; i++) {
+                    const f = flakes[i];
+                    f.angle += f.swaySpeed;
+                    f.y += f.speedY;
+                    f.x += Math.sin(f.angle) * f.swayAmp;
+
+                    if (f.y > height + 10) {
+                        flakes[i] = createFlake(false);
+                        continue;
+                    }
+                    if (f.x > width + 10) f.x = -10;
+                    if (f.x < -10) f.x = width + 10;
+
+                    ctx.beginPath();
+                    ctx.arc(f.x, f.y, f.radius, 0, Math.PI * 2);
+                    ctx.fillStyle = f.isIceBlue
+                        ? `rgba(147, 197, 253, ${f.opacity})`
+                        : `rgba(255, 255, 255, ${Math.min(1, f.opacity + 0.2)})`;
+                    ctx.shadowColor = 'rgba(96, 165, 250, 0.45)';
+                    ctx.shadowBlur = 4;
+                    ctx.fill();
+                }
+
+                requestAnimationFrame(animateSnow);
+            }
+
+            animateSnow();
+        }
+
+        window.addEventListener('load', initSnowfall);
+    </script>
+</body>
+</html>
